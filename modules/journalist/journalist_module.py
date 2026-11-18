@@ -55,11 +55,24 @@ class JournalistModule:
         query: str,
         documents: Sequence[Mapping[str, Any]] | None = None,
         *,
+        content_id: int | None = None,
         limit: int = 10,
     ) -> dict[str, Any]:
+        """Search only current-request docs or evidence attached to one content_id."""
         user = self._user()
-        hits = search_evidence(query, documents, limit=limit)
-        return {"actor": user["username"], "results": hits}
+        docs = list(documents or [])
+        if content_id is not None:
+            attached = self.content.list_evidence(int(content_id))
+            docs.extend(
+                {
+                    "id": row.get("evidence_id"),
+                    "title": row.get("title") or "",
+                    "text": row.get("body_text") or "",
+                }
+                for row in attached
+            )
+        hits = search_evidence(query, docs, limit=limit)
+        return {"actor": user["username"], "results": hits, "content_id": content_id}
 
     def metadata(self, text: str) -> dict[str, Any]:
         user = self._user()
@@ -161,8 +174,17 @@ class JournalistModule:
 
     def add_evidence(self, **kwargs: Any) -> dict[str, Any]:
         user = self._user()
+        if not kwargs.get("content_id"):
+            from utils.errors import ValidationError
+
+            raise ValidationError("content_id is required — evidence must attach to a news/article.")
         evidence_id = self.content.add_evidence(**kwargs)
         return {"actor": user["username"], "evidence_id": evidence_id}
+
+    def list_evidence(self, content_id: int) -> dict[str, Any]:
+        user = self._user()
+        items = self.content.list_evidence(content_id)
+        return {"actor": user["username"], "content_id": content_id, "items": items}
 
     def update_content_status(self, content_id: int, status: str) -> dict[str, Any]:
         user = self._user()

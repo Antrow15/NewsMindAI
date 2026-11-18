@@ -48,16 +48,6 @@ def login(body: LoginRequest) -> LoginResponse:
     )
 
 
-@router.get("/me", summary="Current session user")
-def me(user: dict = Depends(get_current_user)) -> dict:
-    return {
-        "user_id": int(user["user_id"]),
-        "username": str(user["username"]),
-        "role_code": str(user["role_code"]),
-        "capabilities": list(user.get("capabilities") or []),
-    }
-
-
 @router.post("/logout", response_model=MessageResponse, summary="Logout")
 def do_logout(token: str = Depends(get_session_token)) -> MessageResponse:
     logout(token)

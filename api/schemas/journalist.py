@@ -162,6 +162,7 @@ class ArticleCreateRequest(BaseModel):
     article_type: ArticleTypeStr = "feature"
     read_time: int = Field(default=3, ge=1, le=120)
     status: ContentStatusStr = "draft"
+    evidence: list[EvidenceItemIn] = Field(..., min_length=1)
 
 
 class EvidenceCreateRequest(BaseModel):

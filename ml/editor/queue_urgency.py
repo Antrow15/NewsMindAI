@@ -21,7 +21,10 @@ from utils.logger import get_logger
 log = get_logger("ml.editor.queue_urgency")
 
 ROOT = Path(__file__).resolve().parents[2]
+MODEL_DIR = ROOT / "artifacts" / "models" / "editor_queue_urgency"
 MODEL_PATHS = (
+    MODEL_DIR / "model.joblib",
+    # legacy flat path (pre-cleanup)
     ROOT / "artifacts" / "models" / "editor_queue_urgency.joblib",
 )
 
@@ -39,7 +42,7 @@ LABEL_TO_URGENCY = {
 def _load_model() -> dict[str, Any] | None:
     path = next((p for p in MODEL_PATHS if p.exists()), None)
     if path is None:
-        log.warning("editor_queue_urgency.joblib not found")
+        log.warning("Urgency model not found under artifacts/models/editor_queue_urgency/")
         return None
     try:
         import joblib

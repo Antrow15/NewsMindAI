@@ -130,10 +130,14 @@ class ContentService:
         read_time: int = 3,
         status: str = "draft",
         author_id: int | None = None,
+        evidence: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         status = require_content_status(status)
         title = require_title(title)
         body = require_body(body)
+        items = list(evidence or [])
+        if not items:
+            raise ValidationError("At least one evidence item is required when creating an article.")
         errors = validate_content_record(
             {"title": title, "text": body, "content_body": body, "status": status}
         )
@@ -158,7 +162,23 @@ class ContentService:
                 estimated_read_time=require_read_time(read_time),
             )
         )
-        return {"content_id": content_id, "article_id": article_id}
+        evidence_ids: list[int] = []
+        for item in items:
+            evidence_ids.append(
+                self.add_evidence(
+                    content_id=content_id,
+                    title=str(item.get("title") or ""),
+                    evidence_type=str(item.get("evidence_type") or "document"),
+                    source_url=str(item.get("source_url") or ""),
+                    text=str(item.get("text") or ""),
+                    uploaded_by=author_id,
+                )
+            )
+        return {
+            "content_id": content_id,
+            "article_id": article_id,
+            "evidence_ids": evidence_ids,
+        }
 
     def add_evidence(
         self,
@@ -181,6 +201,10 @@ class ContentService:
                 uploaded_by=uploaded_by,
             )
         )
+
+    def list_evidence(self, content_id: int) -> list[dict[str, Any]]:
+        self.repo.get_content(content_id)
+        return self.repo.evidence.list_for_content(content_id)
 
     def get_content(self, content_id: int) -> dict[str, Any]:
         return self.repo.get_content(require_positive_id(content_id, "Content ID"))

@@ -273,7 +273,9 @@ def train_all_from_dataframe(
         output_root=output_directory,
         version=version,
     )
-    summary_path = output_directory / "training_summary.json"
+    # Keep CAE outputs under artifacts/models/cae/ only (no extra root clutter)
+    summary_path = output_directory / CAE_FOLDER / "training_summary.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary = {"content_adaptation": result}
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print()

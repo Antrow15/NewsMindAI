@@ -1,4 +1,7 @@
-"""Knowledge base backed by DB table `knowledge_base` (seeded from CSV)."""
+"""Knowledge base for journalist content relevancy / related history only.
+
+Seeded only from ``data/news`` + ``data/historical`` (not training or evidence).
+"""
 
 from __future__ import annotations
 

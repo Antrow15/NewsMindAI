@@ -4,15 +4,20 @@ from __future__ import annotations
 
 from fastapi import HTTPException, status
 
-from utils.errors import AuthError, NotFoundError, PermissionDeniedError, ValidationError
+from modules.authentication.auth_service import AuthenticationError
+from utils.errors import AppError, AuthError, NotFoundError, PermissionDeniedError, ValidationError
+from utils.logger import get_logger
+
+log = get_logger("api.http_errors")
 
 
 def raise_http_error(exc: Exception) -> None:
     """Convert known app errors to HTTPException. Always raises."""
-    if isinstance(exc, AuthError):
+    if isinstance(exc, (AuthError, AuthenticationError)):
+        detail = getattr(exc, "message", None) or str(exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=exc.message,
+            detail=detail,
         ) from exc
     if isinstance(exc, PermissionDeniedError):
         raise HTTPException(
@@ -40,4 +45,14 @@ def raise_http_error(exc: Exception) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=detail,
         ) from exc
-    raise exc
+    if isinstance(exc, AppError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=exc.message,
+        ) from exc
+    # Avoid opaque FastAPI Internal Server Error for unexpected failures
+    log.exception("Unhandled API error: %s", exc)
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=f"Internal error: {exc}",
+    ) from exc

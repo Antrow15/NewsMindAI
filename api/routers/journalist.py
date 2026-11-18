@@ -58,11 +58,18 @@ def research(body: SearchRequest, token: str = Depends(get_session_token)):
         raise_http_error(exc)
 
 
-@router.post("/evidence-search", response_model=RankedListResponse, summary="Search evidence")
+@router.post(
+    "/evidence-search",
+    response_model=RankedListResponse,
+    summary="Search evidence for current draft or one content_id",
+)
 def evidence_search(body: SearchRequest, token: str = Depends(get_session_token)):
     try:
         return _tools(token).evidence_search(
-            body.query, _as_dicts(body.documents), limit=body.limit
+            body.query,
+            _as_dicts(body.documents),
+            content_id=body.content_id,
+            limit=body.limit,
         )
     except _APP_ERRORS as exc:
         raise_http_error(exc)
@@ -210,9 +217,24 @@ def list_raw_ingest(
         raise_http_error(exc)
 
 
-@router.post("/evidence", response_model=EvidenceCreateResponse, summary="Add evidence")
+@router.post(
+    "/evidence",
+    response_model=EvidenceCreateResponse,
+    summary="Add evidence to an existing news/article",
+)
 def add_evidence(body: EvidenceCreateRequest, token: str = Depends(get_session_token)):
     try:
         return _tools(token).add_evidence(**body.model_dump())
+    except _APP_ERRORS as exc:
+        raise_http_error(exc)
+
+
+@router.get(
+    "/content/{content_id}/evidence",
+    summary="List evidence attached to one news/article",
+)
+def list_evidence(content_id: int, token: str = Depends(get_session_token)):
+    try:
+        return _tools(token).list_evidence(content_id)
     except _APP_ERRORS as exc:
         raise_http_error(exc)

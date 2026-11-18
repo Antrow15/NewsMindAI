@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+*.pyc
+.env
+
+# large local Kaggle dumps (samples whitelisted below)
+data/raw/kaggle_*/
+data/raw/News_Category_Dataset_v3.json
+
+# runtime outputs
+data/processed/*
+!data/processed/.gitkeep
+logs/*.log
+logs/.session_token
+!logs/.gitkeep
+
+# keep researched samples; ignore full dumps / operator drops
+data/raw/*
+!data/raw/.gitkeep
+!data/raw/DATASET_SOURCE.md
+!data/raw/News_Category_Dataset_sample.csv
+!data/raw/Fake_and_Real_News_sample.csv
+!data/raw/News_Headlines_Sarcasm_sample.csv
+!data/raw/Million_Headlines_sample.csv
+!data/raw/BBC_News_sample.csv

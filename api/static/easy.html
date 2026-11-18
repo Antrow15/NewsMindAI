@@ -229,7 +229,6 @@
       {
         name: "Auth",
         endpoints: [
-          { id: "auth-me", title: "Who am I?", method: "GET", path: "/auth/me", role: "any logged-in user", fields: [] },
           { id: "auth-logout", title: "Logout", method: "POST", path: "/auth/logout", role: "any logged-in user", fields: [] },
           { id: "auth-change", title: "Change password", method: "POST", path: "/auth/change-password", role: "any logged-in user", fields: [
             { key: "current_password", label: "Current password", type: "text", value: "" },
@@ -248,8 +247,9 @@
             { key: "query", label: "Search query", type: "text", value: "housing plan" },
             { key: "limit", label: "Limit", type: "number", value: 5 },
           ]},
-          { id: "j-evidence-search", title: "Search evidence", method: "POST", path: "/journalist/evidence-search", role: "journalist", fields: [
+          { id: "j-evidence-search", title: "Search evidence (this content only)", method: "POST", path: "/journalist/evidence-search", role: "journalist", fields: [
             { key: "query", label: "Search query", type: "text", value: "housing funding" },
+            { key: "content_id", label: "Content ID (attached evidence)", type: "number", value: 1 },
             { key: "limit", label: "Limit", type: "number", value: 5 },
           ]},
           { id: "j-metadata", title: "Extract people/places (metadata)", method: "POST", path: "/journalist/metadata", role: "journalist", fields: [
@@ -288,11 +288,15 @@
             { key: "status", label: "Status", type: "text", value: "draft" },
             { key: "evidence_json", label: "Evidence JSON array (min 1)", type: "textarea", value: JSON.stringify([{ title: "Council memo", evidence_type: "link", source_url: "https://example.com/housing", text: "Funding approved" }], null, 2) },
           ]},
-          { id: "j-add-article", title: "Add article", method: "POST", path: "/journalist/articles", role: "journalist", fields: [
+          { id: "j-add-article", title: "Add article (requires evidence)", method: "POST", path: "/journalist/articles", role: "journalist", fields: [
             { key: "title", label: "Title", type: "text", value: "Feature on civic housing reform" },
             { key: "body", label: "Body", type: "textarea", value: BODY },
             { key: "article_type", label: "Article type", type: "text", value: "feature" },
             { key: "status", label: "Status", type: "text", value: "draft" },
+            { key: "evidence_json", label: "Evidence JSON array (min 1)", type: "textarea", value: JSON.stringify([{ title: "Interview notes", evidence_type: "document", source_url: "", text: "Official confirmed timeline" }], null, 2) },
+          ]},
+          { id: "j-list-evidence", title: "List evidence for content", method: "GET", path: "/journalist/content/{content_id}/evidence", role: "journalist", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1, in: "path" },
           ]},
           { id: "j-list-content", title: "List content", method: "GET", path: "/journalist/content", role: "journalist", fields: [
             { key: "limit", label: "Limit (query)", type: "number", value: 20, in: "query" },

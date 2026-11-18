@@ -6,11 +6,12 @@ from contextlib import asynccontextmanager
 
 from pathlib import Path
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
+from api.http_errors import raise_http_error
 from api.routers import (
     admin_router,
     aia_router,
@@ -22,6 +23,8 @@ from api.routers import (
     publisher_router,
 )
 from config.env_loader import load_dotenv
+from modules.authentication.auth_service import AuthenticationError
+from utils.errors import AppError
 from utils.logger import get_logger
 
 log = get_logger("api")
@@ -82,9 +85,9 @@ def create_app() -> FastAPI:
             "4. Use role endpoints (Journalist, AIA, CAE, Publisher, Editor, Manager)\n\n"
             "### Password rules (change/reset)\n"
             "Min 10 characters, with uppercase, lowercase, digit, and special character.\n\n"
-            "Models: `editor_queue_urgency.joblib` (editor review urgency) and "
+            "Models: `artifacts/models/editor_queue_urgency/` (editor review urgency) and "
             "`cae/` (unified content adaptation). Engagement/interest/trend are formulas; "
-            "category is manual. See `ml/README.md` and `docs/NAMING.md`.\n\n"
+            "category is manual entry (no category model).\n\n"
             "Simple tester UI (easier than Swagger): **/easy**"
         ),
         version="0.3.0",
@@ -126,6 +129,36 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={"detail": "Validation failed", "errors": errors},
+        )
+
+    @application.exception_handler(HTTPException)
+    async def http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+    @application.exception_handler(AppError)
+    async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
+        try:
+            raise_http_error(exc)
+        except HTTPException as http_exc:
+            return JSONResponse(
+                status_code=http_exc.status_code,
+                content={"detail": http_exc.detail},
+            )
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    @application.exception_handler(AuthenticationError)
+    async def authentication_error_handler(
+        _request: Request,
+        exc: AuthenticationError,
+    ) -> JSONResponse:
+        return JSONResponse(status_code=401, content={"detail": str(exc)})
+
+    @application.exception_handler(Exception)
+    async def unhandled_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
+        log.exception("Unhandled API exception: %s", exc)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": f"Internal error: {exc}"},
         )
 
     application.include_router(auth_router)

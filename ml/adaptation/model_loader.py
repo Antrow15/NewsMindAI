@@ -19,7 +19,7 @@ def load_model(_platform: str | None = None) -> tuple[object, dict]:
         raise FileNotFoundError(
             "No trained CAE model. "
             "Push CSV to DB then train CAE via the Admin console ML TRAINING menu, "
-            "ml.training.train_cae_from_db(), or: python scripts/train_models_console.py --cae"
+            "ml.training.train_cae_from_db(), or: python -m ml.training --cae"
         )
     import joblib
 

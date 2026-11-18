@@ -133,7 +133,7 @@ SESSION_TTL_HOURS = 12
 LOGIN_LOCKOUT_MINUTES = 15
 MAX_LOGIN_FAILURES = 5
 
-# Demo passwords from docs/CREDENTIALS.md (local only)
+# Demo passwords (local only)
 DEMO_PASSWORDS = {
     "admin": "Admin@NewsMind2026!",
     "analyst": "Analyst@NewsMind2026!",

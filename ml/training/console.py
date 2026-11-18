@@ -1,24 +1,18 @@
-"""Console model training: CSV → ``ml_train_*`` staging → train → artifacts.
+"""Console model training: CSV → ingest+clean → ``ml_train_*`` → artifacts.
 
-The ``content`` table is never used for training data. Newsroom ingest uses
-``ingest_file`` / ``raw_ingest``; ``ml_train_*`` tables hold training rows loaded
-from CSVs (urgency, adaptation pairs, knowledge base seeds).
+Newsroom ``content`` is never used for training. ML CSVs live under
+``ml/editor/dataset`` and ``ml/adaptation/dataset``.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import importlib.util
 from pathlib import Path
 
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]
-
-# Datasets live under ml/ (urgency) and data/adaptation (CAE pairs)
-URGENCY_CSV = ROOT / "ml" / "editor" / "dataset" / "synthetic_news.csv"
-ADAPTATION_CSV = ROOT / "data" / "adaptation" / "newsmind_paired_examples.csv"
 
 
 def _ensure_schema() -> None:
@@ -27,78 +21,39 @@ def _ensure_schema() -> None:
     ensure_ml_training_schema()
 
 
-def push_urgency(csv_path: Path = URGENCY_CSV) -> int:
-    from database.connection import db_cursor
+def push_urgency(csv_path: Path | str | None = None, *, force: bool = False) -> int:
+    from ml.training.ingest_clean import push_all_new, push_urgency_file
 
     _ensure_schema()
-    if not csv_path.exists():
-        raise FileNotFoundError(csv_path)
-    df = pd.read_csv(csv_path)
-    with db_cursor() as cur:
-        cur.execute("TRUNCATE ml_train_urgency RESTART IDENTITY")
-        for row in df.itertuples(index=False):
-            cur.execute(
-                """
-                INSERT INTO ml_train_urgency (headline, body, source, priority)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (
-                    str(getattr(row, "headline", "")),
-                    str(getattr(row, "body", "") or ""),
-                    str(getattr(row, "source", "") or ""),
-                    str(getattr(row, "priority", "")),
-                ),
-            )
-        cur.execute("SELECT COUNT(*) AS n FROM ml_train_urgency")
-        n = int((cur.fetchone() or {}).get("n") or 0)
-    print(f"Pushed {n} urgency rows → ml_train_urgency")
-    return n
+    if csv_path is None:
+        results = push_all_new("urgency", force=force)
+        if not results:
+            result = push_urgency_file(force=force)
+            return int(result.get("rows") or 0)
+        return sum(int(r.get("rows") or 0) for r in results)
+    return int(push_urgency_file(csv_path, force=force).get("rows") or 0)
 
 
-def push_adaptation(csv_path: Path = ADAPTATION_CSV) -> int:
-    from database.connection import db_cursor
+def push_adaptation(csv_path: Path | str | None = None, *, force: bool = False) -> int:
+    from ml.training.ingest_clean import push_adaptation_file, push_all_new
 
     _ensure_schema()
-    target = csv_path if csv_path.exists() else ADAPTATION_CSV
-    if not target.exists():
-        print("Building paired adaptation CSV first...")
-        builder = ROOT / "scripts" / "build_adaptation_paired_csv.py"
-        spec = importlib.util.spec_from_file_location("build_adaptation_paired_csv", builder)
-        mod = importlib.util.module_from_spec(spec)
-        assert spec and spec.loader
-        spec.loader.exec_module(mod)
-        mod.main()
-        target = ADAPTATION_CSV
-    df = pd.read_csv(target)
-    with db_cursor() as cur:
-        cur.execute("TRUNCATE ml_train_adaptation RESTART IDENTITY")
-        for row in df.to_dict("records"):
-            cur.execute(
-                """
-                INSERT INTO ml_train_adaptation
-                    (article_id, original_title, original_content, target_platform, correct_adapted_article)
-                VALUES (%s, %s, %s, %s, %s)
-                """,
-                (
-                    str(row["article_id"]),
-                    str(row["original_title"]),
-                    str(row["original_content"]),
-                    str(row["target_platform"]),
-                    str(row["correct_adapted_article"]),
-                ),
-            )
-        cur.execute("SELECT COUNT(*) AS n FROM ml_train_adaptation")
-        n = int((cur.fetchone() or {}).get("n") or 0)
-    print(f"Pushed {n} adaptation rows → ml_train_adaptation")
-    return n
+    if csv_path is None:
+        results = push_all_new("adaptation", force=force)
+        if not results:
+            result = push_adaptation_file(force=force)
+            return int(result.get("rows") or 0)
+        return sum(int(r.get("rows") or 0) for r in results)
+    return int(push_adaptation_file(csv_path, force=force).get("rows") or 0)
 
 
 def push_knowledge_base() -> int:
+    """Reload journalist content-history corpora into knowledge_base only."""
     from ml.knowledge.base import ensure_knowledge_base_loaded
 
     _ensure_schema()
     n = ensure_knowledge_base_loaded(force=True)
-    print(f"Pushed {n} knowledge_base rows")
+    print(f"Pushed {n} knowledge_base rows (news + historical only)")
     return n
 
 
@@ -127,8 +82,10 @@ def _load_adaptation_from_db() -> pd.DataFrame:
 
 
 def train_urgency_from_db(*, fast: bool = False) -> dict:
-    """Train urgency using rows from DB; print classification report + confusion matrix."""
+    """Train urgency using cleaned rows from DB."""
     import re
+    import sys
+    import time
 
     import joblib
     import numpy as np
@@ -143,6 +100,8 @@ def train_urgency_from_db(*, fast: bool = False) -> dict:
     from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, train_test_split
     from xgboost import XGBClassifier
 
+    from utils.progress import progress
+
     LABELS = ["very low", "low", "medium", "high", "very high"]
     URG_WORDS = (
         r"urgent|breaking|critical|immediate|emergency|severe|ban|sanction|"
@@ -150,17 +109,25 @@ def train_urgency_from_db(*, fast: bool = False) -> dict:
     )
     SEED = 42
 
+    def _step(msg: str) -> None:
+        progress(msg)
+        sys.stdout.flush()
+
     df = _load_urgency_from_db()
     if df.empty:
+        _step("Urgency table empty — pushing detected CSVs (ingest+clean)...")
         push_urgency()
         df = _load_urgency_from_db()
-    print(f"Training urgency from DB ({len(df)} rows)...")
+    if df.empty:
+        raise RuntimeError("No urgency training rows after push.")
 
+    _step(f"1/6 Loaded {len(df)} cleaned rows from ml_train_urgency")
     texts = (df["headline"].fillna("") + ". " + df["body"].fillna("")).to_numpy(dtype=object)
     y = df["priority"].map({label: i for i, label in enumerate(LABELS)}).to_numpy(dtype=int)
     texts_train, texts_test, y_train, y_test = train_test_split(
         texts, y, test_size=0.2, stratify=y, random_state=SEED
     )
+    _step(f"2/6 Split train/test — train={len(y_train)} test={len(y_test)}")
 
     def numeric_features(series_texts):
         s = pd.Series(list(series_texts))
@@ -175,9 +142,12 @@ def train_urgency_from_db(*, fast: bool = False) -> dict:
         matrix = tfidf.fit_transform(series_texts) if fit else tfidf.transform(series_texts)
         return hstack([matrix, csr_matrix(numeric_features(series_texts))]).tocsr()
 
+    _step("3/6 Building TF-IDF features (this can take ~10–30s)...")
+    t0 = time.perf_counter()
     tfidf = TfidfVectorizer(ngram_range=(1, 2), max_features=5000, min_df=2, sublinear_tf=True)
     X_train = featurize(tfidf, texts_train, fit=True)
     X_test = featurize(tfidf, texts_test)
+    _step(f"   Features ready in {time.perf_counter() - t0:.1f}s — shape={X_train.shape}")
 
     base = XGBClassifier(
         objective="multi:softprob",
@@ -188,12 +158,19 @@ def train_urgency_from_db(*, fast: bool = False) -> dict:
         n_jobs=-1,
     )
     if fast:
+        _step("4/6 Fitting XGBoost (fast mode, no CV search)...")
+        t0 = time.perf_counter()
         model = base.set_params(n_estimators=200, max_depth=5, learning_rate=0.1)
         model.fit(X_train, y_train)
-        best_params = {"n_estimators": 200, "max_depth": 5, "learning_rate": 0.1}
-        print("Best params:", best_params)
-        print("CV macro F1: (skipped --fast)")
+        _step(f"   Fit done in {time.perf_counter() - t0:.1f}s")
+        print("Best params:", {"n_estimators": 200, "max_depth": 5, "learning_rate": 0.1})
+        print("CV macro F1: (skipped — fast mode)")
     else:
+        _step(
+            "4/6 Hyperparameter search (8 trials × 3-fold CV) — "
+            "often 2–10+ minutes; please wait..."
+        )
+        t0 = time.perf_counter()
         search = RandomizedSearchCV(
             base,
             {
@@ -208,12 +185,15 @@ def train_urgency_from_db(*, fast: bool = False) -> dict:
             cv=StratifiedKFold(3, shuffle=True, random_state=SEED),
             random_state=SEED,
             n_jobs=1,
+            verbose=1,
         )
         search.fit(X_train, y_train)
         model = search.best_estimator_
+        _step(f"   Search done in {time.perf_counter() - t0:.1f}s")
         print("Best params:", search.best_params_)
         print("CV macro F1:", round(float(search.best_score_), 4))
 
+    _step("5/6 Evaluating on test set...")
     pred = model.predict(X_test)
     print("Accuracy:", round(float(accuracy_score(y_test, pred)), 4))
     print("Macro F1:", round(float(f1_score(y_test, pred, average="macro")), 4))
@@ -221,38 +201,53 @@ def train_urgency_from_db(*, fast: bool = False) -> dict:
     print(classification_report(y_test, pred, target_names=LABELS, digits=3))
     print(pd.DataFrame(confusion_matrix(y_test, pred), index=LABELS, columns=LABELS))
 
-    art = ROOT / "artifacts" / "models" / "editor_queue_urgency.joblib"
-    art.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "model": model,
-        "model_name": "XGBoost",
-        "tfidf": tfidf,
-        "labels": LABELS,
-        "urg_regex": URG_WORDS,
-    }
-    joblib.dump(payload, art)
-    print("Saved", art)
-    return {
+    _step("6/6 Saving model artifact...")
+    model_dir = ROOT / "artifacts" / "models" / "editor_queue_urgency"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    art = model_dir / "model.joblib"
+    metrics_path = model_dir / "metrics.json"
+    payload_metrics = {
         "accuracy": float(accuracy_score(y_test, pred)),
         "macro_f1": float(f1_score(y_test, pred, average="macro")),
         "n_train": int(len(y_train)),
         "n_test": int(len(y_test)),
     }
+    joblib.dump(
+        {
+            "model": model,
+            "model_name": "XGBoost",
+            "tfidf": tfidf,
+            "labels": LABELS,
+            "urg_regex": URG_WORDS,
+        },
+        art,
+    )
+    metrics_path.write_text(json.dumps(payload_metrics, indent=2), encoding="utf-8")
+    _step(f"Saved {art}")
+    _step(f"Saved {metrics_path}")
+    return payload_metrics
 
 
 def train_cae_from_db() -> dict:
+    import sys
+
     from ml.adaptation.training import train_all_from_dataframe
+    from utils.progress import progress
 
     df = _load_adaptation_from_db()
     if df.empty:
+        progress("CAE table empty — pushing detected CSVs (ingest+clean)...")
+        sys.stdout.flush()
         push_adaptation()
         df = _load_adaptation_from_db()
-    print(f"Training unified CAE model from DB ({len(df)} rows)...")
+    if df.empty:
+        raise RuntimeError("No adaptation training rows after push.")
+    progress(f"Training unified CAE from DB ({len(df)} rows) — building features + fit...")
+    sys.stdout.flush()
     return train_all_from_dataframe(df)
 
 
 def _cae_summary(cae_results: dict) -> dict:
-    """Normalize unified CAE train result for console_train_summary.json."""
     block = cae_results.get("content_adaptation") or cae_results
     metrics = (block.get("metrics") or {}).get("test") or {}
     per = block.get("per_platform") or {}
@@ -273,7 +268,7 @@ def _cae_summary(cae_results: dict) -> dict:
 def _write_train_summary(summary: dict) -> None:
     if not summary:
         return
-    out = ROOT / "artifacts" / "models" / "console_train_summary.json"
+    out = ROOT / "artifacts" / "models" / "training_summary.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print()
@@ -282,7 +277,7 @@ def _write_train_summary(summary: dict) -> None:
 
 
 def train_all(*, fast: bool = False) -> dict:
-    """Push urgency + adaptation + KB CSVs; train urgency and CAE only (no category)."""
+    """Push (ingest+clean) urgency + adaptation + KB; train urgency and CAE."""
     push_urgency()
     push_adaptation()
     push_knowledge_base()
@@ -295,32 +290,36 @@ def train_all(*, fast: bool = False) -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="NewsMind console model trainer (CSV → DB → train)")
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help="Push + train urgency, unified CAE, and knowledge base",
+    parser = argparse.ArgumentParser(
+        description="NewsMind trainer (ML CSV → ingest+clean → DB → train)"
     )
+    parser.add_argument("--all", action="store_true")
     parser.add_argument("--urgency", action="store_true")
     parser.add_argument("--cae", action="store_true")
-    parser.add_argument("--knowledge", action="store_true", help="Push knowledge base CSVs to DB")
-    parser.add_argument("--push-only", action="store_true", help="Only push CSVs to DB")
-    parser.add_argument("--fast", action="store_true", help="Faster urgency training (no CV search)")
+    parser.add_argument("--knowledge", action="store_true")
+    parser.add_argument("--push-only", action="store_true")
+    parser.add_argument("--force", action="store_true", help="Re-push even if file hash unchanged")
+    parser.add_argument("--file", default="", help="Specific CSV filename under the dataset folder")
+    parser.add_argument("--fast", action="store_true")
     args = parser.parse_args()
 
     if not any([args.all, args.urgency, args.cae, args.knowledge, args.push_only]):
         parser.print_help()
         raise SystemExit(1)
 
+    file_arg = args.file or None
+
     if args.all:
+        if file_arg:
+            raise SystemExit("--file cannot be combined with --all")
         train_all(fast=args.fast)
         return
 
     summary: dict = {}
     if args.push_only or args.urgency:
-        push_urgency()
+        push_urgency(file_arg, force=args.force)
     if args.push_only or args.cae:
-        push_adaptation()
+        push_adaptation(file_arg, force=args.force)
     if args.push_only or args.knowledge:
         push_knowledge_base()
 
@@ -334,3 +333,7 @@ def main() -> None:
         summary["cae_adaptation"] = _cae_summary(train_cae_from_db())
 
     _write_train_summary(summary)
+
+
+if __name__ == "__main__":
+    main()
