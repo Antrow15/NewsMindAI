@@ -1,13 +1,13 @@
-"""Journalist knowledge base — historical/current news for research & relevancy."""
+"""Relevancy helpers — TF-IDF + cosine over desk-published ``content``."""
 
 from ml.knowledge.base import (
-    ensure_knowledge_base_loaded,
-    load_knowledge_documents,
+    cleanup_legacy_relevancy_sources,
+    load_published_documents,
     score_content_relevancy,
 )
 
 __all__ = [
-    "ensure_knowledge_base_loaded",
-    "load_knowledge_documents",
+    "cleanup_legacy_relevancy_sources",
+    "load_published_documents",
     "score_content_relevancy",
 ]

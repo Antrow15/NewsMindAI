@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from api.schemas.common import DocumentItem, RankedListResponse, SearchRequest, TextBody
+from api.schemas.common import DocumentItem
 from api.schemas.rules import (
     ArticleTypeStr,
     BodyStr,
@@ -18,17 +18,12 @@ from api.schemas.rules import (
 
 __all__ = [
     "DocumentItem",
-    "SearchRequest",
-    "TextBody",
     "DuplicatesRequest",
     "ValidateRequest",
     "RelatedContentRequest",
     "RelatedContentResponse",
     "CredibilityRequest",
-    "PatentSearchRequest",
-    "RankedListResponse",
     "PairsResponse",
-    "EntitiesResponse",
     "ValidateResponse",
     "CredibilityResponse",
     "EvidenceItemIn",
@@ -74,7 +69,7 @@ class ValidateRequest(BaseModel):
 
 
 class RelatedContentRequest(BaseModel):
-    """While-typing related news from knowledge_base (API only; no UI panel)."""
+    """While-typing related news via TF-IDF + cosine on published content."""
 
     title: str = ""
     text: str = ""
@@ -86,33 +81,22 @@ class RelatedContentResponse(BaseModel):
     matches: list[dict[str, Any]] = Field(default_factory=list)
     relevancy: str = "none"
     best_score: float = 0.0
-    knowledge_base_size: int = 0
-    source: str = "knowledge_base"
+    corpus_size: int = 0
+    knowledge_base_size: int = 0  # alias: published content count
+    source: str = "content"
+    method: str = "tfidf_cosine"
 
 
 class CredibilityRequest(BaseModel):
-    text: str = Field(..., min_length=1)
-    evidence_docs: list[DocumentItem] = Field(default_factory=list)
+    """Assess one news/article against the evidence already attached to it."""
+
+    content_id: int = Field(..., gt=0)
     limit: int = Field(default=5, ge=1, le=50)
-
-
-class PatentSearchRequest(BaseModel):
-    query: str = Field(..., min_length=1)
-    documents: list[DocumentItem] | None = Field(
-        default=None,
-        description="Optional patent texts; omit to use data/raw/patents/",
-    )
-    limit: int = Field(default=10, ge=1, le=100)
 
 
 class PairsResponse(BaseModel):
     actor: str
     pairs: list[dict[str, Any]] = []
-
-
-class EntitiesResponse(BaseModel):
-    actor: str
-    entities: dict[str, Any]
 
 
 class ValidateResponse(BaseModel):
@@ -129,6 +113,8 @@ class ValidateResponse(BaseModel):
 
 class CredibilityResponse(BaseModel):
     actor: str
+    content_id: int
+    evidence_count: int = 0
     claims: list[dict[str, Any]] = []
     summary: str = ""
 

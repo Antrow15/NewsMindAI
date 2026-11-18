@@ -1,5 +1,7 @@
 -- NewsMindAI V2 — single database bootstrap (fresh install; wipes public schema).
 -- Applied by: python app.py --init-db
+-- Includes: RBAC/desks, content/evidence, CAE/publisher, ml_train_*.
+-- Relevancy uses desk-published content only (TF-IDF + cosine); no history CSV corpus.
 
 BEGIN;
 
@@ -322,7 +324,7 @@ CREATE TABLE publication (
 CREATE INDEX idx_publication_status ON publication(status);
 
 -- ---------------------------------------------------------------------------
--- ML training + knowledge base
+-- ML training tables (urgency / CAE datasets → train → artifacts)
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE ml_train_file (
@@ -362,18 +364,6 @@ CREATE TABLE ml_train_adaptation (
     source_file             TEXT NOT NULL DEFAULT '',
     loaded_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
-CREATE TABLE knowledge_base (
-    kb_id           BIGSERIAL PRIMARY KEY,
-    title           TEXT NOT NULL,
-    body            TEXT NOT NULL DEFAULT '',
-    category        VARCHAR(128),
-    source_tag      VARCHAR(128),
-    published_date  VARCHAR(64),
-    loaded_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX knowledge_base_title_idx ON knowledge_base (title);
 
 CREATE UNIQUE INDEX ml_train_adaptation_file_article_platform_uidx
     ON ml_train_adaptation (source_file, article_id, target_platform);

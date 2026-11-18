@@ -37,7 +37,7 @@ OPENAPI_TAGS = [
     },
     {
         "name": "2. Journalist tools",
-        "description": "AI tools + desk content (news/articles/evidence/raw ingest).",
+        "description": "AI tools + desk content (news/articles/evidence).",
     },
     {
         "name": "3. Audience Insight Analyst",

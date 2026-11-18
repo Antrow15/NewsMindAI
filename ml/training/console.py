@@ -47,16 +47,6 @@ def push_adaptation(csv_path: Path | str | None = None, *, force: bool = False) 
     return int(push_adaptation_file(csv_path, force=force).get("rows") or 0)
 
 
-def push_knowledge_base() -> int:
-    """Reload journalist content-history corpora into knowledge_base only."""
-    from ml.knowledge.base import ensure_knowledge_base_loaded
-
-    _ensure_schema()
-    n = ensure_knowledge_base_loaded(force=True)
-    print(f"Pushed {n} knowledge_base rows (news + historical only)")
-    return n
-
-
 def _load_urgency_from_db() -> pd.DataFrame:
     from database.connection import db_cursor
 
@@ -277,10 +267,9 @@ def _write_train_summary(summary: dict) -> None:
 
 
 def train_all(*, fast: bool = False) -> dict:
-    """Push (ingest+clean) urgency + adaptation + KB; train urgency and CAE."""
+    """Push (ingest+clean) urgency + CAE datasets; train urgency and CAE."""
     push_urgency()
     push_adaptation()
-    push_knowledge_base()
     summary: dict = {
         "editor_queue_urgency": train_urgency_from_db(fast=fast),
         "cae_adaptation": _cae_summary(train_cae_from_db()),
@@ -296,14 +285,13 @@ def main() -> None:
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--urgency", action="store_true")
     parser.add_argument("--cae", action="store_true")
-    parser.add_argument("--knowledge", action="store_true")
     parser.add_argument("--push-only", action="store_true")
     parser.add_argument("--force", action="store_true", help="Re-push even if file hash unchanged")
     parser.add_argument("--file", default="", help="Specific CSV filename under the dataset folder")
     parser.add_argument("--fast", action="store_true")
     args = parser.parse_args()
 
-    if not any([args.all, args.urgency, args.cae, args.knowledge, args.push_only]):
+    if not any([args.all, args.urgency, args.cae, args.push_only]):
         parser.print_help()
         raise SystemExit(1)
 
@@ -320,8 +308,6 @@ def main() -> None:
         push_urgency(file_arg, force=args.force)
     if args.push_only or args.cae:
         push_adaptation(file_arg, force=args.force)
-    if args.push_only or args.knowledge:
-        push_knowledge_base()
 
     if args.push_only:
         print("Push complete.")

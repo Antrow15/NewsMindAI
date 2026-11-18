@@ -36,13 +36,16 @@ def test_swagger_docs_available(client):
     assert openapi.status_code == 200
     paths = openapi.json()["paths"]
     assert "/auth/login" in paths
-    assert "/journalist/research" in paths
+    assert "/journalist/related-content" in paths
+    assert "/journalist/research" not in paths
+    assert "/journalist/metadata" not in paths
+    assert "/journalist/patents" not in paths
 
 
 def test_journalist_requires_bearer(client):
     response = client.post(
-        "/journalist/research",
-        json={"query": "budget", "documents": []},
+        "/journalist/related-content",
+        json={"title": "budget", "text": "parliament debate"},
     )
     assert response.status_code == 401
 
@@ -50,49 +53,16 @@ def test_journalist_requires_bearer(client):
 def test_publisher_forbidden_on_journalist(client):
     token = _login(client, "publisher")
     response = client.post(
-        "/journalist/research",
+        "/journalist/related-content",
         headers={"Authorization": f"Bearer {token}"},
-        json={"query": "budget", "documents": []},
+        json={"title": "budget", "text": "parliament debate"},
     )
     assert response.status_code == 403
 
 
-def test_journalist_research_and_metadata(client):
+def test_journalist_related_and_validate(client):
     token = _login(client, "journalist")
     headers = {"Authorization": f"Bearer {token}"}
-
-    research = client.post(
-        "/journalist/research",
-        headers=headers,
-        json={
-            "query": "budget parliament",
-            "documents": [
-                {
-                    "id": 1,
-                    "title": "Budget vote in parliament",
-                    "text": "parliament budget vote today",
-                },
-                {
-                    "id": 2,
-                    "title": "Sports final",
-                    "text": "team wins championship game",
-                },
-            ],
-            "limit": 5,
-        },
-    )
-    assert research.status_code == 200, research.text
-    body = research.json()
-    assert body["actor"] == "journalist"
-    assert body["results"][0]["id"] == 1
-
-    meta = client.post(
-        "/journalist/metadata",
-        headers=headers,
-        json={"text": "Alice Smith visited Paris on 2024-01-15."},
-    )
-    assert meta.status_code == 200
-    assert "entities" in meta.json()
 
     validate = client.post(
         "/journalist/validate",
@@ -116,7 +86,8 @@ def test_journalist_research_and_metadata(client):
         },
     )
     assert related.status_code == 200, related.text
-    assert related.json()["source"] == "knowledge_base"
+    assert related.json()["source"] == "content"
+    assert related.json().get("method") == "tfidf_cosine"
     assert "matches" in related.json()
 
     logout_resp = client.post("/auth/logout", headers=headers)
@@ -216,19 +187,17 @@ def test_journalist_desk_content_endpoints(client):
     assert news_list.status_code == 200
     assert isinstance(news_list.json()["items"], list)
 
-    raw = client.get("/journalist/raw-ingest", headers=headers)
-    assert raw.status_code == 200
-    assert "items" in raw.json()
-    assert "counts" in raw.json()
+    assert client.get("/journalist/raw-ingest", headers=headers).status_code == 404
 
     paths = client.get("/openapi.json").json()["paths"]
+    assert "/journalist/raw-ingest" not in paths
+    assert "/admin/raw-ingest" in paths
     for path in (
         "/journalist/news",
         "/journalist/articles",
         "/journalist/content",
         "/journalist/content/{content_id}",
         "/journalist/content/{content_id}/status",
-        "/journalist/raw-ingest",
         "/journalist/evidence",
         "/journalist/content/{content_id}/evidence",
     ):

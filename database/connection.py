@@ -60,7 +60,7 @@ def apply_sql_file(path: Path, cfg: Optional[DatabaseConfig] = None) -> None:
 
 def require_schema(cfg: Optional[DatabaseConfig] = None) -> None:
     """Fail fast if the DB was not initialized with newsmind.sql."""
-    required = ("users", "ml_train_file", "adaptation_requests", "knowledge_base")
+    required = ("users", "content", "ml_train_file", "adaptation_requests")
     with db_cursor(cfg) as cur:
         cur.execute(
             """

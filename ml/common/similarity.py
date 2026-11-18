@@ -1,11 +1,9 @@
-"""One shared place for TF-style ranking and near-duplicate checks.
-
-Uses plain term counts + cosine (numpy). No separate copy in each service.
-"""
+"""TF-IDF + cosine ranking and near-duplicate checks (shared)."""
 
 from __future__ import annotations
 
 from collections import Counter
+from math import log
 from typing import Any, Mapping, Sequence
 
 import numpy as np
@@ -17,18 +15,6 @@ def _tokens(text: str) -> list[str]:
     return normalize(text).split()
 
 
-def _tf_vector(tokens: Sequence[str], vocab: dict[str, int]) -> np.ndarray:
-    vec = np.zeros(len(vocab), dtype=float)
-    if not tokens:
-        return vec
-    counts = Counter(tokens)
-    for term, count in counts.items():
-        idx = vocab.get(term)
-        if idx is not None:
-            vec[idx] = float(count)
-    return vec
-
-
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:
     denom = float(np.linalg.norm(a) * np.linalg.norm(b))
     if denom == 0.0:
@@ -37,7 +23,48 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def _doc_text(doc: Mapping[str, Any]) -> str:
-    return str(doc.get("text") or doc.get("content_body") or doc.get("title") or "")
+    return str(doc.get("text") or doc.get("content_body") or doc.get("body") or doc.get("title") or "")
+
+
+def _tfidf_matrix(
+    query_tokens: Sequence[str],
+    doc_tokens: Sequence[Sequence[str]],
+) -> tuple[np.ndarray, list[np.ndarray]]:
+    """Build smoothed TF-IDF vectors for query + docs (shared IDF over the corpus)."""
+    corpus = [list(query_tokens), *[list(toks) for toks in doc_tokens]]
+    vocab_terms = sorted({t for tokens in corpus for t in tokens})
+    if not vocab_terms:
+        empty = np.zeros(0, dtype=float)
+        return empty, [empty for _ in doc_tokens]
+
+    vocab = {term: i for i, term in enumerate(vocab_terms)}
+    n_docs = len(doc_tokens)
+    df = Counter()
+    for tokens in doc_tokens:
+        df.update(set(tokens))
+
+    idf = np.zeros(len(vocab), dtype=float)
+    for term, idx in vocab.items():
+        # smoothed IDF: log((N+1)/(df+1)) + 1
+        idf[idx] = log((n_docs + 1) / (df.get(term, 0) + 1)) + 1.0
+
+    def tfidf_vec(tokens: Sequence[str]) -> np.ndarray:
+        vec = np.zeros(len(vocab), dtype=float)
+        if not tokens:
+            return vec
+        counts = Counter(tokens)
+        length = float(len(tokens))
+        for term, count in counts.items():
+            idx = vocab.get(term)
+            if idx is None:
+                continue
+            tf = count / length
+            vec[idx] = tf * idf[idx]
+        return vec
+
+    q_vec = tfidf_vec(query_tokens)
+    d_vecs = [tfidf_vec(toks) for toks in doc_tokens]
+    return q_vec, d_vecs
 
 
 def rank(
@@ -46,9 +73,9 @@ def rank(
     *,
     limit: int = 10,
 ) -> list[dict[str, Any]]:
-    """Rank documents by cosine similarity to query.
+    """Rank documents by TF-IDF + cosine similarity to the query.
 
-    Each document may include id, title, text (or content_body).
+    Each document may include id, title, text (or content_body / body).
     Empty corpus → [].
     """
     docs = list(documents or [])
@@ -57,23 +84,21 @@ def rank(
 
     query_tokens = _tokens(query)
     doc_tokens = [_tokens(_doc_text(d)) for d in docs]
-    vocab_terms = sorted({t for tokens in [query_tokens, *doc_tokens] for t in tokens})
-    if not vocab_terms:
+    q_vec, d_vecs = _tfidf_matrix(query_tokens, doc_tokens)
+    if q_vec.size == 0:
         return []
 
-    vocab = {term: i for i, term in enumerate(vocab_terms)}
-    q_vec = _tf_vector(query_tokens, vocab)
-
     scored: list[dict[str, Any]] = []
-    for doc, tokens in zip(docs, doc_tokens):
-        score = _cosine(q_vec, _tf_vector(tokens, vocab))
+    for doc, d_vec in zip(docs, d_vecs):
+        score = _cosine(q_vec, d_vec)
         if score <= 0:
             continue
         scored.append(
             {
-                "id": doc.get("id") or doc.get("content_id") or doc.get("evidence_id"),
+                "id": doc.get("id") or doc.get("kb_id") or doc.get("content_id") or doc.get("evidence_id"),
                 "title": doc.get("title") or "",
                 "score": round(score, 4),
+                "source_tag": doc.get("source_tag") or doc.get("category") or "",
             }
         )
 
@@ -108,10 +133,7 @@ def similar_pairs(
     threshold: float = 0.5,
     limit: int = 20,
 ) -> list[dict[str, Any]]:
-    """Find near-duplicate pairs using MinHash-style Jaccard on shingles.
-
-    Empty / single-doc corpus → [].
-    """
+    """Find near-duplicate pairs using MinHash-style Jaccard on shingles."""
     docs = list(documents or [])
     if len(docs) < 2:
         return []

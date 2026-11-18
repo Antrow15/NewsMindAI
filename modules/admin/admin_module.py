@@ -35,6 +35,19 @@ class AdminModule:
     def _cap(self, capability: str) -> dict[str, Any]:
         return require_capability_session(capability, self.session_token)
 
+    def list_raw_ingest(self, limit: int = 20) -> dict[str, Any]:
+        """ETL staging rows — admin pipeline only (not journalist desk)."""
+        from services.content.content_service import ContentService
+
+        user = self._cap(CAP_INGEST)
+        content = ContentService()
+        return {
+            "actor": user["username"],
+            "role": user.get("role_name") or user["role_code"],
+            "items": content.list_raw_ingest(limit=limit),
+            "counts": content.raw_ingest_counts(),
+        }
+
     def list_csv_files(self) -> dict[str, Any]:
         user = self._cap(CAP_INGEST)
         progress("Scanning data/raw for CSV files...")

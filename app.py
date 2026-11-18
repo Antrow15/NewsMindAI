@@ -395,20 +395,6 @@ def _require_admin_ml() -> dict[str, Any]:
     return user
 
 
-def do_push_knowledge_base() -> int:
-    try:
-        _require_admin_ml()
-        from ml.training import push_knowledge_base
-
-        n = push_knowledge_base()
-    except Exception as exc:  # noqa: BLE001
-        return _handle(exc)
-    header("Push Knowledge Base")
-    kv("Rows loaded", n)
-    success("Knowledge base push completed (news + historical only).")
-    blank()
-    return 0
-
 
 def do_push_urgency_datasets() -> int:
     try:
@@ -836,7 +822,6 @@ def _build_menu(user: Optional[dict[str, Any]]) -> tuple[str, dict[str, Action]]
             lines.append("  ML TRAINING")
             add("Push urgency datasets (ingest+clean)", do_push_urgency_datasets)
             add("Push CAE datasets (ingest+clean)", do_push_adaptation_datasets)
-            add("Push knowledge base (news+historical)", do_push_knowledge_base)
             add("Train urgency model", do_train_urgency)
             add("Train CAE models", do_train_cae)
             add("Train all (urgency+CAE+KB)", do_train_all_models)
@@ -846,12 +831,10 @@ def _build_menu(user: Optional[dict[str, Any]]) -> tuple[str, dict[str, Action]]
             add("View content by ID", do_view_content)
             add("List content", do_list_content)
             add("List news", do_list_news)
-            add("List raw ingest", do_list_raw)
         elif role == ROLE_AUDIENCE_ANALYST:
             add("Add story pitch", do_add_pitch)
             add("Add category", do_add_category)
             add("List content", do_list_content)
-            add("List raw ingest", do_list_raw)
         elif role == ROLE_EDITOR:
             add("View content by ID", do_view_content)
             add("List content", do_list_content)
@@ -871,7 +854,6 @@ def _build_menu(user: Optional[dict[str, Any]]) -> tuple[str, dict[str, Action]]
             add("List content", do_list_content)
             add("List news", do_list_news)
             add("Update content status", do_update_content_status)
-            add("List raw ingest", do_list_raw)
         elif role == ROLE_ADAPTATION_EDITOR:
             add("View content by ID", do_view_content)
             add("List content", do_list_content)

@@ -243,18 +243,6 @@
       {
         name: "Journalist tools",
         endpoints: [
-          { id: "j-research", title: "Research related news", method: "POST", path: "/journalist/research", role: "journalist", fields: [
-            { key: "query", label: "Search query", type: "text", value: "housing plan" },
-            { key: "limit", label: "Limit", type: "number", value: 5 },
-          ]},
-          { id: "j-evidence-search", title: "Search evidence (this content only)", method: "POST", path: "/journalist/evidence-search", role: "journalist", fields: [
-            { key: "query", label: "Search query", type: "text", value: "housing funding" },
-            { key: "content_id", label: "Content ID (attached evidence)", type: "number", value: 1 },
-            { key: "limit", label: "Limit", type: "number", value: 5 },
-          ]},
-          { id: "j-metadata", title: "Extract people/places (metadata)", method: "POST", path: "/journalist/metadata", role: "journalist", fields: [
-            { key: "text", label: "Text", type: "textarea", value: BODY },
-          ]},
           { id: "j-duplicates", title: "Find duplicate documents", method: "POST", path: "/journalist/duplicates", role: "journalist", fields: [
             { key: "documents_json", label: "Documents JSON array", type: "textarea", value: JSON.stringify([{ id: "a", title: "Housing plan", text: BODY }, { id: "b", title: "Housing plan update", text: BODY }], null, 2) },
           ]},
@@ -263,18 +251,14 @@
             { key: "text", label: "Body text", type: "textarea", value: BODY },
             { key: "status", label: "Status", type: "text", value: "draft" },
           ]},
-          { id: "j-related", title: "Related content (knowledge base)", method: "POST", path: "/journalist/related-content", role: "journalist", fields: [
+          { id: "j-related", title: "Related content (TF-IDF + desk published)", method: "POST", path: "/journalist/related-content", role: "journalist", fields: [
             { key: "title", label: "Title", type: "text", value: "Housing plan advances in council" },
             { key: "text", label: "Body text", type: "textarea", value: BODY },
             { key: "limit", label: "Limit", type: "number", value: 8 },
           ]},
-          { id: "j-cred", title: "Credibility check", method: "POST", path: "/journalist/credibility", role: "journalist", fields: [
-            { key: "text", label: "Text", type: "textarea", value: BODY },
-            { key: "limit", label: "Limit", type: "number", value: 3 },
-          ]},
-          { id: "j-patents", title: "Search patents", method: "POST", path: "/journalist/patents", role: "journalist", fields: [
-            { key: "query", label: "Query", type: "text", value: "housing construction materials" },
-            { key: "limit", label: "Limit", type: "number", value: 3 },
+          { id: "j-cred", title: "Assess credibility (uses attached evidence)", method: "POST", path: "/journalist/credibility", role: "journalist", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1 },
+            { key: "limit", label: "Claims to check", type: "number", value: 5 },
           ]},
         ],
       },
@@ -310,9 +294,6 @@
             { key: "status", label: "New status (draft/submitted/rework/...)", type: "text", value: "submitted" },
           ]},
           { id: "j-list-news", title: "List news", method: "GET", path: "/journalist/news", role: "journalist", fields: [
-            { key: "limit", label: "Limit (query)", type: "number", value: 20, in: "query" },
-          ]},
-          { id: "j-raw", title: "List raw ingest", method: "GET", path: "/journalist/raw-ingest", role: "journalist", fields: [
             { key: "limit", label: "Limit (query)", type: "number", value: 20, in: "query" },
           ]},
           { id: "j-evidence", title: "Add evidence", method: "POST", path: "/journalist/evidence", role: "journalist", fields: [
@@ -525,6 +506,9 @@
         name: "Admin",
         endpoints: [
           { id: "ad-csv", title: "List CSV files", method: "GET", path: "/admin/csv-files", role: "admin", fields: [] },
+          { id: "ad-raw", title: "List raw ingest (ETL staging)", method: "GET", path: "/admin/raw-ingest", role: "admin", fields: [
+            { key: "limit", label: "Limit (query)", type: "number", value: 20, in: "query" },
+          ]},
           { id: "ad-ingest", title: "Ingest CSVs", method: "POST", path: "/admin/ingest", role: "admin", fields: [
             { key: "only_new", label: "Only new (true/false)", type: "text", value: "true" },
           ]},

@@ -28,6 +28,8 @@ def validate_article(record: Mapping[str, Any] | None = None) -> dict[str, Any]:
         "relevancy": relevancy.get("relevancy"),
         "relevancy_score": relevancy.get("best_score"),
         "relevancy_matches": relevancy.get("matches", [])[:5],
-        "knowledge_base_size": relevancy.get("knowledge_base_size"),
-        "source": "knowledge_base",
+        "corpus_size": relevancy.get("corpus_size") or relevancy.get("knowledge_base_size"),
+        "knowledge_base_size": relevancy.get("knowledge_base_size") or relevancy.get("corpus_size"),
+        "source": "content",
+        "method": relevancy.get("method") or "tfidf_cosine",
     }

@@ -3,7 +3,6 @@
 from ml.training.console import (
     main,
     push_adaptation,
-    push_knowledge_base,
     push_urgency,
     train_all,
     train_cae_from_db,
@@ -13,7 +12,6 @@ from ml.training.console import (
 __all__ = [
     "main",
     "push_adaptation",
-    "push_knowledge_base",
     "push_urgency",
     "train_all",
     "train_cae_from_db",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from api.deps import get_session_token
 from api.http_errors import raise_http_error
@@ -19,6 +19,7 @@ from api.schemas.admin import (
     PipelineRequest,
     ResetPasswordRequest,
 )
+from api.schemas.journalist import RawIngestListResponse
 from config.constants import CAP_ANALYTICS, CAP_MANAGE_USERS
 from modules.admin import AdminModule
 from services.access import require_capability_session
@@ -44,6 +45,21 @@ def _ok(result: dict[str, Any], *, message: str = "") -> AdminActionResponse:
 def list_csv_files(token: str = Depends(get_session_token)):
     try:
         return _ok(_admin(token).list_csv_files())
+    except _APP_ERRORS as exc:
+        raise_http_error(exc)
+
+
+@router.get(
+    "/raw-ingest",
+    response_model=RawIngestListResponse,
+    summary="List raw ingest staging rows (ETL)",
+)
+def list_raw_ingest(
+    limit: int = Query(default=20, ge=1, le=500),
+    token: str = Depends(get_session_token),
+):
+    try:
+        return _admin(token).list_raw_ingest(limit=limit)
     except _APP_ERRORS as exc:
         raise_http_error(exc)
 

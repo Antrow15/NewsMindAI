@@ -16,18 +16,12 @@ from api.schemas.journalist import (
     CredibilityRequest,
     CredibilityResponse,
     DuplicatesRequest,
-    EntitiesResponse,
     EvidenceCreateRequest,
     EvidenceCreateResponse,
     NewsCreateRequest,
     PairsResponse,
-    PatentSearchRequest,
-    RankedListResponse,
-    RawIngestListResponse,
     RelatedContentRequest,
     RelatedContentResponse,
-    SearchRequest,
-    TextBody,
     ValidateRequest,
     ValidateResponse,
 )
@@ -48,39 +42,6 @@ def _as_dicts(items) -> list[dict]:
 
 
 # ── AI tools ─────────────────────────────────────────────────────────────────
-
-
-@router.post("/research", response_model=RankedListResponse, summary="Research related news")
-def research(body: SearchRequest, token: str = Depends(get_session_token)):
-    try:
-        return _tools(token).research(body.query, _as_dicts(body.documents), limit=body.limit)
-    except _APP_ERRORS as exc:
-        raise_http_error(exc)
-
-
-@router.post(
-    "/evidence-search",
-    response_model=RankedListResponse,
-    summary="Search evidence for current draft or one content_id",
-)
-def evidence_search(body: SearchRequest, token: str = Depends(get_session_token)):
-    try:
-        return _tools(token).evidence_search(
-            body.query,
-            _as_dicts(body.documents),
-            content_id=body.content_id,
-            limit=body.limit,
-        )
-    except _APP_ERRORS as exc:
-        raise_http_error(exc)
-
-
-@router.post("/metadata", response_model=EntitiesResponse, summary="Extract metadata")
-def metadata(body: TextBody, token: str = Depends(get_session_token)):
-    try:
-        return _tools(token).metadata(body.text)
-    except _APP_ERRORS as exc:
-        raise_http_error(exc)
 
 
 @router.post("/duplicates", response_model=PairsResponse, summary="Find duplicates")
@@ -106,7 +67,7 @@ def validate(body: ValidateRequest, token: str = Depends(get_session_token)):
 @router.post(
     "/related-content",
     response_model=RelatedContentResponse,
-    summary="Related news from knowledge base (while-typing API)",
+    summary="Related news from published content",
 )
 def related_content(body: RelatedContentRequest, token: str = Depends(get_session_token)):
     try:
@@ -119,23 +80,14 @@ def related_content(body: RelatedContentRequest, token: str = Depends(get_sessio
         raise_http_error(exc)
 
 
-@router.post("/credibility", response_model=CredibilityResponse, summary="Assess credibility")
+@router.post(
+    "/credibility",
+    response_model=CredibilityResponse,
+    summary="Assess news credibility against its attached evidence",
+)
 def credibility(body: CredibilityRequest, token: str = Depends(get_session_token)):
     try:
-        return _tools(token).credibility(
-            body.text,
-            _as_dicts(body.evidence_docs),
-            limit=body.limit,
-        )
-    except _APP_ERRORS as exc:
-        raise_http_error(exc)
-
-
-@router.post("/patents", response_model=RankedListResponse, summary="Search patents")
-def patents(body: PatentSearchRequest, token: str = Depends(get_session_token)):
-    try:
-        docs = None if body.documents is None else _as_dicts(body.documents)
-        return _tools(token).patents(body.query, docs, limit=body.limit)
+        return _tools(token).credibility(body.content_id, limit=body.limit)
     except _APP_ERRORS as exc:
         raise_http_error(exc)
 
@@ -202,17 +154,6 @@ def list_news(
 ):
     try:
         return _tools(token).list_news(limit=limit)
-    except _APP_ERRORS as exc:
-        raise_http_error(exc)
-
-
-@router.get("/raw-ingest", response_model=RawIngestListResponse, summary="List raw ingest")
-def list_raw_ingest(
-    limit: int = Query(default=20, ge=1, le=500),
-    token: str = Depends(get_session_token),
-):
-    try:
-        return _tools(token).list_raw_ingest(limit=limit)
     except _APP_ERRORS as exc:
         raise_http_error(exc)
 

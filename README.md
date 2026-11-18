@@ -18,17 +18,18 @@ Console newsroom backend plus FastAPI role APIs (Swagger at `/docs`).
 
 | Location | Purpose |
 |---|---|
-| `data/news/`, `data/historical/` | Journalist **content relevance / related history** only (`knowledge_base` → related-content) |
-| `data/raw/` | Newsroom ingest → `content` |
-| `data/patents/` | Patent research corpus (not history/relevance) |
-| `ml/editor/dataset/*.csv` | Urgency training (any filename) |
-| `ml/adaptation/dataset/*.csv` | CAE training (any filename) |
-| `artifacts/models/editor_queue_urgency/` | Urgency model (`model.joblib`, `metrics.json`) |
-| `artifacts/models/cae/` | CAE model (`model.joblib`, `metadata.json`, `metrics.json`) |
+| Location | Push target | Used for |
+|---|---|---|
+| `data/raw/` | **`content`** via admin ingest | Desk workflow |
+| `ml/editor/dataset/*.csv` | **`ml_train_urgency`** | Urgency model training |
+| `ml/adaptation/dataset/*.csv` | **`ml_train_adaptation`** | CAE model training |
+| `artifacts/models/…` | (trained artifacts) | Inference |
 
-**Evidence** is always attached to a news/article (`content_id`). Multiple items per content are allowed. No orphan evidence and no reusing another story’s evidence.
+**Relevancy:** TF-IDF + cosine over **desk-published** `content` only (after publisher sets `status=published`). No history CSV corpus.
 
-**ML training flow:** `ml/**/dataset/*.csv` → ingest/normalize → same cleaners → `ml_train_*` (skip if file hash unchanged) → train → `artifacts/models/`.
+**Evidence flow:** create news/article with evidence → validate → `POST /journalist/credibility` with `content_id`.
+
+**Push commands:** console *Push urgency* / *Push CAE*, or `python -m ml.training --push-only`.
 
 ---
 
@@ -38,6 +39,12 @@ Copy `ENV.example` → `.env`.
 `config/db_config.py` + `config/runtime.py` load it automatically.
 
 Database bootstrap is a single file: `database/newsmind.sql` (`python app.py --init-db`).
+
+Temp desk/probe data (metro stories, evidence, pitches): `database/seed_temp_data.sql` — run after init-db:
+
+```powershell
+python -c "from pathlib import Path; from database.connection import apply_sql_file; apply_sql_file(Path('database/seed_temp_data.sql'))"
+```
 
 ---
 
