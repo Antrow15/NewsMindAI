@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NewsMind Easy API Tester — V2</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=Fraunces:opsz,wght@9..144,650&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #18212b;
+      --muted: #617084;
+      --paper: #f2efe7;
+      --panel: #fffcf6;
+      --line: #d9d2c4;
+      --accent: #0f6e56;
+      --accent-soft: #d7eee5;
+      --blue: #1d4f91;
+      --ok: #047857;
+      --bad: #be123c;
+      --get: #1d4f91;
+      --post: #0f6e56;
+      --put: #9a3412;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "DM Sans", system-ui, sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #e9f2ec 0%, var(--paper) 28%, #ebe6dc 100%);
+      min-height: 100vh;
+    }
+    .app {
+      width: min(1280px, calc(100% - 1.5rem));
+      margin: 0 auto;
+      padding: 1.1rem 0 2rem;
+      display: grid;
+      grid-template-columns: 250px 1fr 1fr;
+      gap: 0.85rem;
+      align-items: start;
+    }
+    header {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      align-items: end;
+    }
+    h1 {
+      font-family: Fraunces, Georgia, serif;
+      font-size: clamp(1.6rem, 3vw, 2.1rem);
+      margin: 0;
+      line-height: 1.1;
+    }
+    .sub { margin: 0.3rem 0 0; color: var(--muted); max-width: 52rem; line-height: 1.45; font-size: 0.92rem; }
+    a.link { color: var(--accent); font-weight: 600; text-decoration: none; }
+    .box {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(24, 33, 43, 0.06);
+    }
+    .login {
+      grid-column: 1 / -1;
+      padding: 0.85rem;
+      display: grid;
+      grid-template-columns: 1.2fr 1.4fr auto auto 1.5fr;
+      gap: 0.65rem;
+      align-items: end;
+    }
+    label { display: grid; gap: 0.28rem; font-size: 0.82rem; color: var(--muted); font-weight: 600; }
+    input, select, textarea, button { font: inherit; }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.62rem 0.72rem;
+      background: #fff;
+      color: var(--ink);
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    textarea { min-height: 88px; resize: vertical; line-height: 1.4; }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 0.68rem 0.95rem;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.secondary { background: #2a3646; }
+    button.ghost {
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      text-align: left;
+      width: 100%;
+      font-weight: 600;
+      padding: 0.55rem 0.65rem;
+    }
+    button.ghost.active {
+      background: var(--ink);
+      color: #fff;
+      border-color: var(--ink);
+    }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .session { font-size: 0.88rem; color: var(--muted); padding-bottom: 0.2rem; }
+    .session strong { color: var(--ok); }
+    .nav { padding: 0.75rem; max-height: calc(100vh - 8rem); overflow: auto; position: sticky; top: 0.75rem; }
+    .nav h3 {
+      margin: 0.85rem 0 0.4rem;
+      font-size: 0.75rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .nav h3:first-child { margin-top: 0; }
+    .nav .ep { margin-bottom: 0.35rem; }
+    .method {
+      display: inline-block;
+      min-width: 2.6rem;
+      text-align: center;
+      font-size: 0.68rem;
+      font-weight: 800;
+      border-radius: 6px;
+      padding: 0.12rem 0.3rem;
+      margin-right: 0.35rem;
+      color: #fff;
+    }
+    .method.GET { background: var(--get); }
+    .method.POST { background: var(--post); }
+    .method.PUT { background: var(--put); }
+    .form, .outbox { padding: 0.9rem; min-height: 520px; }
+    .form h2 { margin: 0 0 0.25rem; font-size: 1.15rem; }
+    .pathline {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 0.86rem;
+      color: var(--blue);
+      margin: 0 0 0.75rem;
+      word-break: break-all;
+    }
+    .who { color: var(--muted); font-size: 0.88rem; margin: 0 0 0.9rem; }
+    .fields { display: grid; gap: 0.65rem; }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; }
+    .actions { margin-top: 0.9rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .out {
+      background: #18212b;
+      color: #e7eef8;
+      border-radius: 12px;
+      padding: 0.85rem;
+      min-height: 420px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 0.84rem;
+      line-height: 1.45;
+    }
+    .meta { margin: 0 0 0.55rem; font-size: 0.9rem; color: var(--muted); }
+    .meta.ok { color: var(--ok); font-weight: 700; }
+    .meta.bad { color: var(--bad); font-weight: 700; }
+    @media (max-width: 980px) {
+      .app { grid-template-columns: 1fr; }
+      .login { grid-template-columns: 1fr 1fr; }
+      .nav { position: static; max-height: none; }
+      .row2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div>
+        <h1>NewsMind Easy API Tester</h1>
+        <p class="sub">NewsMindAI V2 — plain forms for every current endpoint. <strong>Admin</strong> can run any call. Two ML models: <strong>editor queue urgency</strong> and one <strong>unified CAE</strong> adapter for all platforms. Story <strong>category is manual</strong> (no category predictor). The ML Project folder is gone; model training lives under <code>ml/</code>. Login once, pick an action, run, read JSON on the right.</p>
+      </div>
+      <a class="link" href="/docs" target="_blank" rel="noreferrer">Swagger (advanced) →</a>
+    </header>
+
+    <section class="box login">
+      <label>User
+        <select id="username">
+          <option value="admin">admin</option>
+          <option value="editor">editor</option>
+          <option value="analyst">analyst</option>
+          <option value="journalist">journalist</option>
+          <option value="manager">manager</option>
+          <option value="publisher">publisher</option>
+          <option value="adapter">adapter</option>
+        </select>
+      </label>
+      <label>Password
+        <input id="password" type="password" />
+      </label>
+      <button id="loginBtn" type="button">Login</button>
+      <button id="logoutBtn" class="secondary" type="button">Logout</button>
+      <div class="session" id="session">Not logged in</div>
+    </section>
+
+    <aside class="box nav" id="nav"></aside>
+    <section class="box form" id="formPanel"></section>
+    <section class="box outbox">
+      <div class="meta" id="outMeta">Output</div>
+      <div class="out" id="output">Login, then choose an endpoint.</div>
+    </section>
+  </div>
+
+  <script>
+    const PASSWORDS = {
+      admin: "Admin@NewsMind2026!",
+      analyst: "Analyst@NewsMind2026!",
+      journalist: "Journalist@NewsMind2026!",
+      editor: "Editor@NewsMind2026!",
+      adapter: "Adapter@NewsMind2026!",
+      publisher: "Publisher@NewsMind2026!",
+      manager: "Manager@NewsMind2026!",
+    };
+
+    const BODY = "The city council approved a housing plan covering several wards after a public review. Officials said funding begins next quarter.";
+
+    const GROUPS = [
+      {
+        name: "Auth",
+        endpoints: [
+          { id: "auth-me", title: "Who am I?", method: "GET", path: "/auth/me", role: "any logged-in user", fields: [] },
+          { id: "auth-logout", title: "Logout", method: "POST", path: "/auth/logout", role: "any logged-in user", fields: [] },
+          { id: "auth-change", title: "Change password", method: "POST", path: "/auth/change-password", role: "any logged-in user", fields: [
+            { key: "current_password", label: "Current password", type: "text", value: "" },
+            { key: "new_password", label: "New password", type: "text", value: "" },
+          ]},
+          { id: "auth-reset", title: "Admin reset password", method: "POST", path: "/auth/admin/reset-password", role: "admin", fields: [
+            { key: "username", label: "Username to reset", type: "text", value: "journalist" },
+            { key: "new_password", label: "New password", type: "text", value: "Journalist@NewsMind2026!" },
+          ]},
+        ],
+      },
+      {
+        name: "Journalist tools",
+        endpoints: [
+          { id: "j-research", title: "Research related news", method: "POST", path: "/journalist/research", role: "journalist", fields: [
+            { key: "query", label: "Search query", type: "text", value: "housing plan" },
+            { key: "limit", label: "Limit", type: "number", value: 5 },
+          ]},
+          { id: "j-evidence-search", title: "Search evidence", method: "POST", path: "/journalist/evidence-search", role: "journalist", fields: [
+            { key: "query", label: "Search query", type: "text", value: "housing funding" },
+            { key: "limit", label: "Limit", type: "number", value: 5 },
+          ]},
+          { id: "j-metadata", title: "Extract people/places (metadata)", method: "POST", path: "/journalist/metadata", role: "journalist", fields: [
+            { key: "text", label: "Text", type: "textarea", value: BODY },
+          ]},
+          { id: "j-duplicates", title: "Find duplicate documents", method: "POST", path: "/journalist/duplicates", role: "journalist", fields: [
+            { key: "documents_json", label: "Documents JSON array", type: "textarea", value: JSON.stringify([{ id: "a", title: "Housing plan", text: BODY }, { id: "b", title: "Housing plan update", text: BODY }], null, 2) },
+          ]},
+          { id: "j-validate", title: "Validate article fields", method: "POST", path: "/journalist/validate", role: "journalist", fields: [
+            { key: "title", label: "Title", type: "text", value: "Long enough headline for validation" },
+            { key: "text", label: "Body text", type: "textarea", value: BODY },
+            { key: "status", label: "Status", type: "text", value: "draft" },
+          ]},
+          { id: "j-related", title: "Related content (knowledge base)", method: "POST", path: "/journalist/related-content", role: "journalist", fields: [
+            { key: "title", label: "Title", type: "text", value: "Housing plan advances in council" },
+            { key: "text", label: "Body text", type: "textarea", value: BODY },
+            { key: "limit", label: "Limit", type: "number", value: 8 },
+          ]},
+          { id: "j-cred", title: "Credibility check", method: "POST", path: "/journalist/credibility", role: "journalist", fields: [
+            { key: "text", label: "Text", type: "textarea", value: BODY },
+            { key: "limit", label: "Limit", type: "number", value: 3 },
+          ]},
+          { id: "j-patents", title: "Search patents", method: "POST", path: "/journalist/patents", role: "journalist", fields: [
+            { key: "query", label: "Query", type: "text", value: "housing construction materials" },
+            { key: "limit", label: "Limit", type: "number", value: 3 },
+          ]},
+        ],
+      },
+      {
+        name: "Journalist desk",
+        endpoints: [
+          { id: "j-add-news", title: "Add news (requires evidence)", method: "POST", path: "/journalist/news", role: "journalist", fields: [
+            { key: "title", label: "Title", type: "text", value: "Housing plan advances in council" },
+            { key: "body", label: "Body", type: "textarea", value: BODY },
+            { key: "summary", label: "Summary", type: "text", value: "Council housing update" },
+            { key: "status", label: "Status", type: "text", value: "draft" },
+            { key: "evidence_json", label: "Evidence JSON array (min 1)", type: "textarea", value: JSON.stringify([{ title: "Council memo", evidence_type: "link", source_url: "https://example.com/housing", text: "Funding approved" }], null, 2) },
+          ]},
+          { id: "j-add-article", title: "Add article", method: "POST", path: "/journalist/articles", role: "journalist", fields: [
+            { key: "title", label: "Title", type: "text", value: "Feature on civic housing reform" },
+            { key: "body", label: "Body", type: "textarea", value: BODY },
+            { key: "article_type", label: "Article type", type: "text", value: "feature" },
+            { key: "status", label: "Status", type: "text", value: "draft" },
+          ]},
+          { id: "j-list-content", title: "List content", method: "GET", path: "/journalist/content", role: "journalist", fields: [
+            { key: "limit", label: "Limit (query)", type: "number", value: 20, in: "query" },
+            { key: "status", label: "Status filter (query, optional)", type: "text", value: "", in: "query" },
+          ]},
+          { id: "j-get-content", title: "View one content item", method: "GET", path: "/journalist/content/{content_id}", role: "journalist", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1, in: "path" },
+          ]},
+          { id: "j-status", title: "Update content status", method: "PUT", path: "/journalist/content/{content_id}/status", role: "journalist", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1, in: "path" },
+            { key: "status", label: "New status (draft/submitted/rework/...)", type: "text", value: "submitted" },
+          ]},
+          { id: "j-list-news", title: "List news", method: "GET", path: "/journalist/news", role: "journalist", fields: [
+            { key: "limit", label: "Limit (query)", type: "number", value: 20, in: "query" },
+          ]},
+          { id: "j-raw", title: "List raw ingest", method: "GET", path: "/journalist/raw-ingest", role: "journalist", fields: [
+            { key: "limit", label: "Limit (query)", type: "number", value: 20, in: "query" },
+          ]},
+          { id: "j-evidence", title: "Add evidence", method: "POST", path: "/journalist/evidence", role: "journalist", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1 },
+            { key: "title", label: "Evidence title", type: "text", value: "Council memo" },
+            { key: "evidence_type", label: "Type", type: "text", value: "link" },
+            { key: "source_url", label: "Source URL", type: "text", value: "https://example.com/housing" },
+            { key: "text", label: "Optional plain text", type: "textarea", value: "" },
+          ]},
+        ],
+      },
+      {
+        name: "AIA (Audience Insight)",
+        endpoints: [
+          { id: "aia-eng", title: "Analyze engagement", method: "POST", path: "/aia/analyze-engagement", role: "analyst", fields: [
+            { key: "views", label: "Views", type: "number", value: 500 },
+            { key: "likes", label: "Likes", type: "number", value: 40 },
+            { key: "shares", label: "Shares", type: "number", value: 12 },
+            { key: "comments", label: "Comments", type: "number", value: 8 },
+          ]},
+          { id: "aia-int", title: "Analyze audience interest", method: "POST", path: "/aia/analyze-interest", role: "analyst", fields: [
+            { key: "views", label: "Views", type: "number", value: 500 },
+            { key: "likes", label: "Likes", type: "number", value: 40 },
+            { key: "shares", label: "Shares", type: "number", value: 12 },
+            { key: "comments", label: "Comments", type: "number", value: 8 },
+          ]},
+          { id: "aia-trend", title: "Analyze trends", method: "POST", path: "/aia/analyze-trends", role: "analyst", fields: [
+            { key: "title", label: "Title", type: "text", value: "Sports finals draw record TV audience" },
+            { key: "summary", label: "Summary", type: "textarea", value: "Ratings surge overnight" },
+          ]},
+          { id: "aia-perf", title: "Performance analytics loop", method: "GET", path: "/aia/performance", role: "analyst", fields: [] },
+          { id: "aia-pitch", title: "Generate story pitch", method: "POST", path: "/aia/generate-story-pitch", role: "analyst", fields: [
+            { key: "title", label: "Title", type: "text", value: "AIA pitch on civic sports funding" },
+            { key: "summary", label: "Summary", type: "textarea", value: "City may expand youth sports programs next year." },
+            { key: "category", label: "Category (required, manual)", type: "text", value: "Sports" },
+            { key: "trend_score", label: "Trend score", type: "number", value: 70 },
+            { key: "audience_interest_score", label: "Interest score", type: "number", value: 65 },
+            { key: "coverage_gap_score", label: "Coverage gap", type: "number", value: 40 },
+          ]},
+          { id: "aia-list", title: "List story pitches", method: "GET", path: "/aia/story-pitches", role: "analyst", fields: [] },
+          { id: "aia-top", title: "Top story pitches", method: "GET", path: "/aia/story-pitches/top", role: "analyst", fields: [] },
+        ],
+      },
+      {
+        name: "Editor",
+        endpoints: [
+          { id: "ed-score", title: "Score queue urgency (MODEL)", method: "POST", path: "/editor/queue/score", role: "editor", fields: [
+            { key: "title", label: "Title", type: "text", value: "BREAKING plant fire halts production" },
+            { key: "summary", label: "Summary", type: "textarea", value: "Emergency crews on scene after critical factory fire" },
+          ]},
+          { id: "ed-queue", title: "Review queue (urgency sorted)", method: "GET", path: "/editor/queue", role: "editor", fields: [
+            { key: "pitch_status", label: "Pitch status (query)", type: "text", value: "submitted", in: "query" },
+            { key: "content_status", label: "Content status (query)", type: "text", value: "submitted", in: "query" },
+          ]},
+          { id: "ed-pitches", title: "List pitches", method: "GET", path: "/editor/pitches", role: "editor", fields: [
+            { key: "status", label: "Status (query)", type: "text", value: "submitted", in: "query" },
+          ]},
+          { id: "ed-dups", title: "Find duplicate pitches", method: "POST", path: "/editor/pitches/duplicates", role: "editor", fields: [
+            { key: "title", label: "Title to check", type: "text", value: "AIA pitch on civic sports funding" },
+            { key: "summary", label: "Summary", type: "textarea", value: "" },
+          ]},
+          { id: "ed-suggest", title: "Suggest journalist to assign", method: "POST", path: "/editor/assign/suggest", role: "editor", fields: [
+            { key: "topic", label: "Topic", type: "text", value: "Sports city funding" },
+            { key: "title", label: "Title", type: "text", value: "Youth sports budget" },
+          ]},
+          { id: "ed-pitch-ok", title: "Approve pitch", method: "PUT", path: "/editor/pitches/{story_pitch_id}/approve", role: "editor", fields: [
+            { key: "story_pitch_id", label: "Story pitch ID", type: "number", value: 1, in: "path" },
+          ]},
+          { id: "ed-pitch-no", title: "Reject pitch", method: "PUT", path: "/editor/pitches/{story_pitch_id}/reject", role: "editor", fields: [
+            { key: "story_pitch_id", label: "Story pitch ID", type: "number", value: 1, in: "path" },
+            { key: "remarks", label: "Remarks", type: "textarea", value: "Needs clearer angle" },
+          ]},
+          { id: "ed-content", title: "List content", method: "GET", path: "/editor/content", role: "editor", fields: [
+            { key: "status", label: "Status (query)", type: "text", value: "submitted", in: "query" },
+          ]},
+          { id: "ed-c-ok", title: "Approve content", method: "PUT", path: "/editor/content/{content_id}/approve", role: "editor", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1, in: "path" },
+          ]},
+          { id: "ed-c-no", title: "Reject content", method: "PUT", path: "/editor/content/{content_id}/reject", role: "editor", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1, in: "path" },
+            { key: "remarks", label: "Remarks", type: "textarea", value: "Not ready" },
+          ]},
+          { id: "ed-rework", title: "Send content to rework", method: "PUT", path: "/editor/content/{content_id}/rework", role: "editor", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1, in: "path" },
+            { key: "remarks", label: "Remarks", type: "textarea", value: "Add more sources" },
+          ]},
+          { id: "ed-assign", title: "Assign content", method: "PUT", path: "/editor/content/{content_id}/assign", role: "editor", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1, in: "path" },
+            { key: "assignee_user_id", label: "Assignee user ID", type: "number", value: 3 },
+            { key: "note", label: "Note", type: "text", value: "Please take this" },
+          ]},
+        ],
+      },
+      {
+        name: "CAE — one unified model (all platforms)",
+        endpoints: [
+          { id: "cae-create", title: "Create adaptations", method: "POST", path: "/cae/adaptations", role: "adapter", fields: [
+            { key: "original_title", label: "Original title", type: "text", value: "Feature on civic housing reform" },
+            { key: "original_content", label: "Original content", type: "textarea", value: BODY },
+            { key: "target_platforms", label: "Platforms (comma-separated)", type: "text", value: "SOCIAL_MEDIA,WEBSITE" },
+          ]},
+          { id: "cae-get", title: "Get adaptation request", method: "GET", path: "/cae/adaptations/{request_id}", role: "adapter", fields: [
+            { key: "request_id", label: "Request ID", type: "number", value: 1, in: "path" },
+          ]},
+          { id: "cae-ok", title: "Approve draft", method: "POST", path: "/cae/adaptation-drafts/{draft_id}/approve", role: "adapter", fields: [
+            { key: "draft_id", label: "Draft ID", type: "number", value: 1, in: "path" },
+            { key: "remarks", label: "Remarks", type: "text", value: "Looks good" },
+          ]},
+          { id: "cae-no", title: "Reject draft", method: "POST", path: "/cae/adaptation-drafts/{draft_id}/reject", role: "adapter", fields: [
+            { key: "draft_id", label: "Draft ID", type: "number", value: 1, in: "path" },
+            { key: "remarks", label: "Remarks (required)", type: "textarea", value: "Too long for social" },
+          ]},
+          { id: "cae-regen", title: "Regenerate draft", method: "POST", path: "/cae/adaptation-drafts/{draft_id}/regenerate", role: "adapter", fields: [
+            { key: "draft_id", label: "Draft ID", type: "number", value: 1, in: "path" },
+            { key: "remarks", label: "Remarks (required)", type: "textarea", value: "Make it shorter" },
+          ]},
+          { id: "cae-final", title: "Finalize draft", method: "PUT", path: "/cae/adaptation-drafts/{draft_id}/final", role: "adapter", fields: [
+            { key: "draft_id", label: "Draft ID", type: "number", value: 1, in: "path" },
+            { key: "final_title", label: "Final title", type: "text", value: "Housing reform — short take" },
+            { key: "final_content", label: "Final content", type: "textarea", value: BODY },
+            { key: "remarks", label: "Remarks", type: "text", value: "Ready" },
+          ]},
+          { id: "cae-ver", title: "List draft versions", method: "GET", path: "/cae/adaptation-drafts/{draft_id}/versions", role: "adapter", fields: [
+            { key: "draft_id", label: "Draft ID", type: "number", value: 1, in: "path" },
+          ]},
+        ],
+      },
+      {
+        name: "Publisher",
+        endpoints: [
+          { id: "pub-list", title: "Ready articles", method: "GET", path: "/publisher/articles", role: "publisher", fields: [] },
+          { id: "pub-templates", title: "List templates", method: "GET", path: "/publisher/templates", role: "publisher", fields: [] },
+          { id: "pub-approve", title: "Approve for publication", method: "PUT", path: "/publisher/articles/{content_id}/approve", role: "publisher", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1, in: "path" },
+          ]},
+          { id: "pub-template", title: "Assign template", method: "PUT", path: "/publisher/articles/{content_id}/template", role: "publisher", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1, in: "path" },
+            { key: "template_code", label: "Template code", type: "text", value: "web_standard" },
+          ]},
+          { id: "pub-preview", title: "Preview article", method: "GET", path: "/publisher/articles/{content_id}/preview", role: "publisher", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1, in: "path" },
+          ]},
+          { id: "pub-now", title: "Publish now", method: "POST", path: "/publisher/articles/{content_id}/publish", role: "publisher", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1, in: "path" },
+          ]},
+          { id: "pub-sched", title: "Schedule publish", method: "POST", path: "/publisher/articles/{content_id}/schedule", role: "publisher", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1, in: "path" },
+            { key: "scheduled_at", label: "Scheduled at (ISO datetime)", type: "text", value: "2026-12-01T10:00:00Z" },
+          ]},
+          { id: "pub-analytics", title: "Publication analytics", method: "GET", path: "/publisher/analytics", role: "publisher", fields: [] },
+        ],
+      },
+      {
+        name: "Manager",
+        endpoints: [
+          { id: "mg-over", title: "Desk overview", method: "GET", path: "/manager/overview", role: "manager", fields: [] },
+          { id: "mg-bot", title: "Bottlenecks", method: "GET", path: "/manager/bottlenecks", role: "manager", fields: [] },
+          { id: "mg-an", title: "Business analytics", method: "GET", path: "/manager/analytics", role: "manager", fields: [] },
+          { id: "mg-work", title: "Journalist workload", method: "GET", path: "/manager/workload", role: "manager", fields: [] },
+          { id: "mg-risk", title: "Deadline risk", method: "GET", path: "/manager/deadline-risk", role: "manager", fields: [
+            { key: "submitted_hours", label: "Submitted hours threshold", type: "number", value: 48, in: "query" },
+            { key: "rework_hours", label: "Rework hours threshold", type: "number", value: 24, in: "query" },
+          ]},
+          { id: "mg-res", title: "Resource utilization", method: "GET", path: "/manager/resources", role: "manager", fields: [] },
+          { id: "mg-queue", title: "Manager review queue", method: "GET", path: "/manager/queue", role: "manager", fields: [] },
+          { id: "mg-pitches", title: "List pitches", method: "GET", path: "/manager/pitches", role: "manager", fields: [
+            { key: "status", label: "Status (query)", type: "text", value: "submitted", in: "query" },
+          ]},
+          { id: "mg-pitch-ok", title: "Approve pitch", method: "PUT", path: "/manager/pitches/{story_pitch_id}/approve", role: "manager", fields: [
+            { key: "story_pitch_id", label: "Story pitch ID", type: "number", value: 1, in: "path" },
+          ]},
+          { id: "mg-pitch-no", title: "Reject pitch", method: "PUT", path: "/manager/pitches/{story_pitch_id}/reject", role: "manager", fields: [
+            { key: "story_pitch_id", label: "Story pitch ID", type: "number", value: 1, in: "path" },
+            { key: "remarks", label: "Remarks", type: "textarea", value: "Hold for now" },
+          ]},
+          { id: "mg-content", title: "List content", method: "GET", path: "/manager/content", role: "manager", fields: [
+            { key: "status", label: "Status (query)", type: "text", value: "submitted", in: "query" },
+          ]},
+          { id: "mg-c-ok", title: "Approve content", method: "PUT", path: "/manager/content/{content_id}/approve", role: "manager", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1, in: "path" },
+          ]},
+          { id: "mg-c-no", title: "Reject content", method: "PUT", path: "/manager/content/{content_id}/reject", role: "manager", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1, in: "path" },
+            { key: "remarks", label: "Remarks", type: "textarea", value: "Needs rewrite" },
+          ]},
+          { id: "mg-assign", title: "Assign content", method: "PUT", path: "/manager/content/{content_id}/assign", role: "manager", fields: [
+            { key: "content_id", label: "Content ID", type: "number", value: 1, in: "path" },
+            { key: "assignee_user_id", label: "Assignee user ID", type: "number", value: 3 },
+            { key: "note", label: "Note", type: "text", value: "Assign please" },
+          ]},
+          { id: "mg-add-user", title: "Add user", method: "POST", path: "/admin/users", role: "manager", fields: [
+            { key: "username", label: "Username", type: "text", value: "desk_writer1" },
+            { key: "password", label: "Password", type: "text", value: "TempPass@NewsMind2026!" },
+            { key: "first_name", label: "First name", type: "text", value: "Desk" },
+            { key: "last_name", label: "Last name", type: "text", value: "Writer" },
+            { key: "email", label: "Email", type: "text", value: "desk.writer1@newsmind.local" },
+            { key: "role_code", label: "Role code", type: "text", value: "journalist" },
+          ]},
+          { id: "mg-reset", title: "Reset user password", method: "POST", path: "/admin/users/reset-password", role: "manager", fields: [
+            { key: "username", label: "Username", type: "text", value: "journalist" },
+            { key: "new_password", label: "New password", type: "text", value: "Journalist@NewsMind2026!" },
+          ]},
+          { id: "mg-cat", title: "Add category", method: "POST", path: "/admin/categories", role: "manager", fields: [
+            { key: "name", label: "Category name", type: "text", value: "Local" },
+            { key: "description", label: "Description", type: "text", value: "Local desk topics" },
+          ]},
+        ],
+      },
+      {
+        name: "Admin",
+        endpoints: [
+          { id: "ad-csv", title: "List CSV files", method: "GET", path: "/admin/csv-files", role: "admin", fields: [] },
+          { id: "ad-ingest", title: "Ingest CSVs", method: "POST", path: "/admin/ingest", role: "admin", fields: [
+            { key: "only_new", label: "Only new (true/false)", type: "text", value: "true" },
+          ]},
+          { id: "ad-ingest-file", title: "Ingest one CSV file", method: "POST", path: "/admin/ingest-file", role: "admin", fields: [
+            { key: "source_file", label: "CSV filename (under data/raw)", type: "text", value: "sample_news.csv" },
+          ]},
+          { id: "ad-clean", title: "Clean ingested data", method: "POST", path: "/admin/clean", role: "admin", fields: [] },
+          { id: "ad-ingest-clean", title: "Ingest then clean", method: "POST", path: "/admin/ingest-and-clean", role: "admin", fields: [
+            { key: "only_new", label: "Only new (true/false)", type: "text", value: "true" },
+          ]},
+          { id: "ad-persist", title: "Persist cleaned data", method: "POST", path: "/admin/persist", role: "admin", fields: [] },
+          { id: "ad-pipeline", title: "Full ETL pipeline", method: "POST", path: "/admin/pipeline", role: "admin", fields: [
+            { key: "only_new", label: "Only new (true/false)", type: "text", value: "true" },
+          ]},
+          { id: "ad-users", title: "Add user", method: "POST", path: "/admin/users", role: "admin", fields: [
+            { key: "username", label: "Username", type: "text", value: "admin_created1" },
+            { key: "password", label: "Password", type: "text", value: "TempPass@NewsMind2026!" },
+            { key: "first_name", label: "First name", type: "text", value: "Admin" },
+            { key: "last_name", label: "Last name", type: "text", value: "Created" },
+            { key: "email", label: "Email", type: "text", value: "admin.created1@newsmind.local" },
+            { key: "role_code", label: "Role code", type: "text", value: "journalist" },
+          ]},
+          { id: "ad-reset", title: "Reset password", method: "POST", path: "/admin/users/reset-password", role: "admin", fields: [
+            { key: "username", label: "Username", type: "text", value: "journalist" },
+            { key: "new_password", label: "New password", type: "text", value: "Journalist@NewsMind2026!" },
+          ]},
+          { id: "ad-user-get", title: "Look up user", method: "GET", path: "/admin/users/{username}", role: "admin", fields: [
+            { key: "username", label: "Username", type: "text", value: "journalist", in: "path" },
+          ]},
+          { id: "ad-cat", title: "Add category", method: "POST", path: "/admin/categories", role: "admin", fields: [
+            { key: "name", label: "Category name", type: "text", value: "Local" },
+            { key: "description", label: "Description", type: "text", value: "Local desk topics" },
+          ]},
+        ],
+      },
+    ];
+
+    const state = {
+      token: localStorage.getItem("nm_token") || "",
+      user: localStorage.getItem("nm_user") || "",
+      role: localStorage.getItem("nm_role") || "",
+      currentId: "j-related",
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    function findEndpoint(id) {
+      for (const g of GROUPS) {
+        const hit = g.endpoints.find((e) => e.id === id);
+        if (hit) return hit;
+      }
+      return GROUPS[0].endpoints[0];
+    }
+
+    function renderNav() {
+      const nav = $("nav");
+      nav.innerHTML = "";
+      for (const g of GROUPS) {
+        const h = document.createElement("h3");
+        h.textContent = g.name;
+        nav.appendChild(h);
+        for (const ep of g.endpoints) {
+          const wrap = document.createElement("div");
+          wrap.className = "ep";
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "ghost" + (ep.id === state.currentId ? " active" : "");
+          btn.innerHTML = `<span class="method ${ep.method}">${ep.method}</span>${ep.title}`;
+          btn.addEventListener("click", () => {
+            state.currentId = ep.id;
+            renderNav();
+            renderForm();
+          });
+          wrap.appendChild(btn);
+          nav.appendChild(wrap);
+        }
+      }
+    }
+
+    function fieldHtml(f) {
+      const val = f.value ?? "";
+      if (f.type === "textarea") {
+        return `<label>${f.label}<textarea data-key="${f.key}" data-in="${f.in || "body"}">${escapeHtml(String(val))}</textarea></label>`;
+      }
+      return `<label>${f.label}<input data-key="${f.key}" data-in="${f.in || "body"}" type="${f.type === "number" ? "number" : "text"}" value="${escapeAttr(String(val))}" /></label>`;
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    }
+    function escapeAttr(s) {
+      return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+    }
+
+    function renderForm() {
+      const ep = findEndpoint(state.currentId);
+      const fields = ep.fields || [];
+      const pairs = [];
+      for (let i = 0; i < fields.length; i += 2) {
+        if (fields[i].type === "textarea" || (fields[i + 1] && fields[i + 1].type === "textarea") || !fields[i + 1]) {
+          pairs.push(`<div class="fields">${fieldHtml(fields[i])}</div>`);
+          if (fields[i + 1]) pairs.push(`<div class="fields">${fieldHtml(fields[i + 1])}</div>`);
+        } else {
+          pairs.push(`<div class="row2">${fieldHtml(fields[i])}${fieldHtml(fields[i + 1])}</div>`);
+        }
+      }
+      $("formPanel").innerHTML = `
+        <h2>${ep.title}</h2>
+        <p class="pathline"><span class="method ${ep.method}">${ep.method}</span> ${ep.path}</p>
+        <p class="who">Typical role: <strong>${ep.role}</strong> — admin can run every endpoint</p>
+        <div class="fields">${pairs.join("") || "<p class='who'>No input fields — just click Run.</p>"}</div>
+        <div class="actions"><button type="button" id="runBtn">Run request</button></div>
+      `;
+      $("runBtn").addEventListener("click", () => runEndpoint(ep));
+    }
+
+    function readFields(ep) {
+      const pathVals = {};
+      const query = {};
+      const body = {};
+      $("formPanel").querySelectorAll("[data-key]").forEach((el) => {
+        const key = el.dataset.key;
+        const where = el.dataset.in || "body";
+        let val = el.value;
+        if (el.type === "number" && val !== "") val = Number(val);
+        if (where === "path") pathVals[key] = val;
+        else if (where === "query") {
+          if (val !== "" && val !== null && val !== undefined) query[key] = val;
+        } else if (val !== "" || key === "text") {
+          body[key] = val;
+        }
+      });
+
+      if (body.documents_json !== undefined) {
+        try { body.documents = JSON.parse(body.documents_json || "[]"); }
+        catch { throw new Error("Documents JSON is invalid"); }
+        delete body.documents_json;
+      }
+      if (body.evidence_json !== undefined) {
+        try { body.evidence = JSON.parse(body.evidence_json || "[]"); }
+        catch { throw new Error("Evidence JSON is invalid"); }
+        delete body.evidence_json;
+      }
+      if (body.only_new !== undefined && typeof body.only_new === "string") {
+        body.only_new = ["1", "true", "yes", "y"].includes(String(body.only_new).toLowerCase());
+      }
+      if (body.target_platforms !== undefined && typeof body.target_platforms === "string") {
+        body.target_platforms = body.target_platforms.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+
+      let path = ep.path;
+      Object.entries(pathVals).forEach(([k, v]) => {
+        path = path.replace(`{${k}}`, encodeURIComponent(String(v)));
+      });
+      const qs = new URLSearchParams(query).toString();
+      if (qs) path += (path.includes("?") ? "&" : "?") + qs;
+      return { path, body };
+    }
+
+    async function api(method, path, body) {
+      const headers = { "Content-Type": "application/json" };
+      if (state.token) headers.Authorization = `Bearer ${state.token}`;
+      const res = await fetch(path, {
+        method,
+        headers,
+        body: ["POST", "PUT", "PATCH"].includes(method) ? JSON.stringify(body ?? {}) : undefined,
+      });
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = text; }
+      return { ok: res.ok, status: res.status, data };
+    }
+
+    function showOut(ok, title, data) {
+      const meta = $("outMeta");
+      meta.className = "meta " + (ok ? "ok" : "bad");
+      meta.textContent = title;
+      $("output").textContent = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+    }
+
+    async function runEndpoint(ep) {
+      try {
+        if (!state.token && ep.path !== "/auth/login") {
+          showOut(false, "Login first", { detail: "Choose a user and click Login" });
+          return;
+        }
+        const { path, body } = readFields(ep);
+        const needsBody = ["POST", "PUT", "PATCH"].includes(ep.method);
+        const result = await api(ep.method, path, needsBody ? body : undefined);
+        showOut(result.ok, `${result.status} ${ep.method} ${path}`, result.data);
+      } catch (err) {
+        showOut(false, "Request error", { detail: String(err.message || err) });
+      }
+    }
+
+    $("username").addEventListener("change", () => {
+      $("password").value = PASSWORDS[$("username").value] || "";
+    });
+
+    $("loginBtn").addEventListener("click", async () => {
+      const username = $("username").value;
+      const password = $("password").value;
+      const result = await api("POST", "/auth/login", { username, password });
+      if (!result.ok) {
+        showOut(false, `Login failed (${result.status})`, result.data);
+        return;
+      }
+      state.token = result.data.session_token;
+      state.user = result.data.username;
+      state.role = result.data.role_code;
+      localStorage.setItem("nm_token", state.token);
+      localStorage.setItem("nm_user", state.user);
+      localStorage.setItem("nm_role", state.role);
+      $("session").innerHTML = `Logged in as <strong>${state.user}</strong> (${state.role})`;
+      showOut(true, "Login OK", result.data);
+    });
+
+    $("logoutBtn").addEventListener("click", async () => {
+      if (state.token) {
+        try { await api("POST", "/auth/logout"); } catch (_) {}
+      }
+      state.token = state.user = state.role = "";
+      localStorage.removeItem("nm_token");
+      localStorage.removeItem("nm_user");
+      localStorage.removeItem("nm_role");
+      $("session").textContent = "Not logged in";
+      showOut(true, "Logged out", { message: "Session cleared" });
+    });
+
+    $("password").value = PASSWORDS[$("username").value];
+    if (state.token) {
+      $("session").innerHTML = `Logged in as <strong>${state.user || "?"}</strong> (${state.role || "?"})`;
+    }
+    renderNav();
+    renderForm();
+  </script>
+</body>
+</html>
