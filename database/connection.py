@@ -15,6 +15,7 @@ from utils.logger import get_logger
 
 log = get_logger("db")
 ROOT = Path(__file__).resolve().parents[1]
+SCHEMA_SQL = ROOT / "database" / "newsmind.sql"
 
 
 def get_connection(cfg: Optional[DatabaseConfig] = None) -> PgConnection:
@@ -35,9 +36,8 @@ def db_cursor(cfg: Optional[DatabaseConfig] = None) -> Generator:
 
 
 def apply_sql_file(path: Path, cfg: Optional[DatabaseConfig] = None) -> None:
-    """Apply a SQL file statement-by-statement so later upgrades still run after IF NOT EXISTS creates."""
+    """Apply a SQL file statement-by-statement."""
     raw = path.read_text(encoding="utf-8")
-    # Strip line comments, then split on semicolons
     lines: list[str] = []
     for line in raw.splitlines():
         stripped = line.strip()
@@ -58,38 +58,36 @@ def apply_sql_file(path: Path, cfg: Optional[DatabaseConfig] = None) -> None:
         conn.close()
 
 
-def init_schema(cfg: Optional[DatabaseConfig] = None) -> None:
-    cfg = cfg or load_db_config()
-    apply_sql_file(ROOT / "database" / "schema.sql", cfg)
-    apply_sql_file(ROOT / "database" / "seed_data.sql", cfg)
-    apply_sql_file(ROOT / "database" / "schema_cae_publisher.sql", cfg)
-    apply_sql_file(ROOT / "database" / "schema_ml_training.sql", cfg)
-    # Existing DBs may still allow orphan evidence rows
+def require_schema(cfg: Optional[DatabaseConfig] = None) -> None:
+    """Fail fast if the DB was not initialized with newsmind.sql."""
+    required = ("users", "ml_train_file", "adaptation_requests", "knowledge_base")
     with db_cursor(cfg) as cur:
-        cur.execute("DELETE FROM evidence WHERE content_id IS NULL")
         cur.execute(
             """
-            DO $$
-            BEGIN
-                ALTER TABLE evidence ALTER COLUMN content_id SET NOT NULL;
-            EXCEPTION WHEN others THEN
-                NULL;
-            END $$;
-            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = ANY(%s)
+            """,
+            (list(required),),
         )
+        found = {str(row["table_name"]) for row in cur.fetchall() or []}
+    missing = [name for name in required if name not in found]
+    if missing:
+        raise RuntimeError(
+            "Database schema incomplete (missing: "
+            + ", ".join(missing)
+            + "). Run: python app.py --init-db"
+        )
+
+
+def init_schema(cfg: Optional[DatabaseConfig] = None) -> None:
+    """Fresh install from database/newsmind.sql, then seed demo users."""
+    cfg = cfg or load_db_config()
+    apply_sql_file(SCHEMA_SQL, cfg)
     from database.seed_demo_users import seed_demo_users
 
     seed_demo_users()
-
-
-def ensure_cae_publisher_schema(cfg: Optional[DatabaseConfig] = None) -> None:
-    """Apply CAE/publisher tables without wiping the main schema."""
-    apply_sql_file(ROOT / "database" / "schema_cae_publisher.sql", cfg or load_db_config())
-
-
-def ensure_ml_training_schema(cfg: Optional[DatabaseConfig] = None) -> None:
-    """Apply ML training + knowledge_base tables without wiping the main schema."""
-    apply_sql_file(ROOT / "database" / "schema_ml_training.sql", cfg or load_db_config())
 
 
 def check_connection(cfg: Optional[DatabaseConfig] = None) -> bool:

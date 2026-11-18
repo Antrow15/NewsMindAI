@@ -16,9 +16,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def _ensure_schema() -> None:
-    from database.connection import ensure_ml_training_schema
+    from database.connection import require_schema
 
-    ensure_ml_training_schema()
+    require_schema()
 
 
 def push_urgency(csv_path: Path | str | None = None, *, force: bool = False) -> int:

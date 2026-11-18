@@ -53,7 +53,7 @@ def seed_demo_users() -> int:
     for username, role_code, first, last, email in DEMO_USERS:
         role_id = roles.get_id_by_code(role_code)
         if role_id is None:
-            raise RuntimeError(f"Missing role {role_code} — apply seed_data.sql first")
+            raise RuntimeError(f"Missing role {role_code} — run python app.py --init-db first")
         emp_id = employees.create(
             Employee(
                 employee_code=f"NF-{username.upper()}",

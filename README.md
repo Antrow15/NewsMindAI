@@ -37,6 +37,8 @@ Console newsroom backend plus FastAPI role APIs (Swagger at `/docs`).
 Copy `ENV.example` → `.env`.  
 `config/db_config.py` + `config/runtime.py` load it automatically.
 
+Database bootstrap is a single file: `database/newsmind.sql` (`python app.py --init-db`).
+
 ---
 
 ## Start

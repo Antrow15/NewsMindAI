@@ -142,9 +142,9 @@ def _clean_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def push_urgency_file(csv_path: Path | str | None = None, *, force: bool = False) -> dict[str, Any]:
-    from database.connection import db_cursor, ensure_ml_training_schema
+    from database.connection import db_cursor, require_schema
 
-    ensure_ml_training_schema()
+    require_schema()
     path = resolve_dataset_csv("urgency", csv_path)
     rel = f"ml/editor/dataset/{path.name}"
     digest = file_hash(path)
@@ -183,9 +183,9 @@ def push_urgency_file(csv_path: Path | str | None = None, *, force: bool = False
 
 
 def push_adaptation_file(csv_path: Path | str | None = None, *, force: bool = False) -> dict[str, Any]:
-    from database.connection import db_cursor, ensure_ml_training_schema
+    from database.connection import db_cursor, require_schema
 
-    ensure_ml_training_schema()
+    require_schema()
     path = resolve_dataset_csv("adaptation", csv_path)
     rel = f"ml/adaptation/dataset/{path.name}"
     digest = file_hash(path)

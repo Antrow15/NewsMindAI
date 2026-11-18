@@ -49,9 +49,9 @@ def _docs_from_csv(paths: tuple[Path, ...] = DEFAULT_CSV_PATHS, limit: int = 400
 
 def ensure_knowledge_base_loaded(*, force: bool = False) -> int:
     """Push CSV knowledge into DB if the table is empty (or force reload)."""
-    from database.connection import db_cursor, ensure_ml_training_schema
+    from database.connection import db_cursor, require_schema
 
-    ensure_ml_training_schema()
+    require_schema()
     with db_cursor() as cur:
         cur.execute("SELECT COUNT(*) AS n FROM knowledge_base")
         count = int((cur.fetchone() or {}).get("n") or 0)
@@ -75,9 +75,9 @@ def ensure_knowledge_base_loaded(*, force: bool = False) -> int:
 def load_knowledge_documents(*, limit: int = 2000) -> list[dict[str, Any]]:
     """Load KB docs from DB; fall back to CSV files if DB unavailable/empty."""
     try:
-        from database.connection import db_cursor, ensure_ml_training_schema
+        from database.connection import db_cursor, require_schema
 
-        ensure_ml_training_schema()
+        require_schema()
         ensure_knowledge_base_loaded()
         with db_cursor() as cur:
             cur.execute(
