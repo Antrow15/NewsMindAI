@@ -80,7 +80,7 @@ def create_app() -> FastAPI:
         description=(
             "### Quick start\n"
             "1. Open **1. Login** → `POST /auth/login` → Try it out\n"
-            "2. Copy `session_token` from the response\n"
+            "2. Copy `session_token` (JWT) from the response\n"
             "3. Click **Authorize** → paste token → Authorize\n"
             "4. Use role endpoints (Journalist, AIA, CAE, Publisher, Editor, Manager)\n\n"
             "### Password rules (change/reset)\n"

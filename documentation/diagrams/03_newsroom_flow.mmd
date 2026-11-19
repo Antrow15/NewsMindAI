@@ -1,0 +1,19 @@
+sequenceDiagram
+  participant J as Journalist
+  participant API as FastAPI
+  participant Ed as Editor
+  participant Pub as Publisher
+  participant AIA as AIA
+  participant CAE as CAE
+
+  J->>API: POST /auth/login
+  API-->>J: session_token
+  J->>API: POST /journalist/news (+evidence)
+  J->>API: PUT /journalist/content/{id}/status submitted
+  Ed->>API: GET /editor/queue
+  Ed->>API: PUT /editor/content/{id}/approve
+  Pub->>API: POST /publisher/articles/{id}/publish
+  AIA->>API: GET /aia/performance
+  AIA->>API: POST /aia/generate-story-pitch
+  CAE->>API: POST /cae/adaptations
+  CAE->>API: PUT /cae/adaptation-drafts/{id}/final

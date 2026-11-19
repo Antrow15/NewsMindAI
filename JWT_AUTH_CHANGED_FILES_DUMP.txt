@@ -1,0 +1,1005 @@
+================================================================================
+NewsMindAI V2 — JWT Auth Change Dump (changed files only)
+Generated (UTC): 2026-11-19T02:17:33.008348+00:00
+Note: .env is NOT included (contains secrets). See ENV.example.
+================================================================================
+
+CHANGED FILES:
+  - requirements.txt
+  - ENV.example
+  - README.md
+  - config/constants.py
+  - modules/authentication/security.py
+  - modules/authentication/auth_service.py
+  - api/deps.py
+  - api/main.py
+  - api/routers/auth.py
+  - api/schemas/auth.py
+
+================================================================================
+FILE: requirements.txt
+================================================================================
+# NewsMind — console CLI + FastAPI role APIs
+
+pandas==2.1.4
+numpy==1.26.4
+scipy>=1.11.0,<2.0
+psycopg2-binary==2.9.11
+pytest==9.0.2
+fastapi>=0.115.0,<1.0
+uvicorn[standard]>=0.32.0,<1.0
+PyJWT>=2.8.0,<3.0
+httpx>=0.27.0
+spacy>=3.7.0,<4.0
+scikit-learn==1.9.1
+xgboost>=2.0.0,<4.0
+joblib>=1.3.0
+
+================================================================================
+FILE: ENV.example
+================================================================================
+# Copy to .env in this folder (loaded by config/db_config.py + config/runtime.py).
+
+# --- PostgreSQL (local or hosted) ---
+NEWSROOM_DB_HOST=localhost
+NEWSROOM_DB_PORT=5432
+NEWSROOM_DB_NAME=newsmind_console
+NEWSROOM_DB_USER=postgres
+NEWSROOM_DB_PASSWORD=admin
+# For cloud Postgres often: require
+NEWSROOM_DB_SSLMODE=prefer
+NEWSROOM_DB_CONNECT_TIMEOUT=10
+
+NEWSROOM_DEBUG=false
+
+# --- Auth (JWT HS256) ---
+# Required. App will not start auth without this (no hardcoded fallback).
+NEWSROOM_JWT_SECRET=replace-with-a-long-random-secret
+
+# --- Pipeline / IO ---
+NEWSROOM_CSV_CHUNK_ROWS=2000
+NEWSROOM_DB_INSERT_BATCH=200
+NEWSROOM_MAX_CSV_MB_WARN=15
+NEWSROOM_WRITE_PROCESSED_FILES=false
+NEWSROOM_PIPELINE_FILE_BY_FILE=true
+
+================================================================================
+FILE: README.md
+================================================================================
+# NewsMind
+
+Console newsroom backend plus FastAPI role APIs (Swagger at `/docs`).
+
+## Architecture
+
+| Layer | Path | Responsibility |
+|---|---|---|
+| Console CLI | `app.py` | Role menus, human-readable output |
+| FastAPI + Swagger | `api/` | Auth, journalist, AIA, CAE, publisher, editor, manager, admin |
+| Feature modules | `modules/` | Auth, admin pipeline, content desk, journalist tools |
+| Services | `services/` | Pipeline + desks |
+| ML helpers | `ml/` | `common` + `aia` + `editor` + `adaptation` + `knowledge` + `training` |
+| Cleaners | `cleaners/` | Shared ingest cleaning stages |
+| DAO / Entities | `dao/`, `entities/` | Table access + domain objects |
+
+## Data vs ML
+
+| Location | Purpose |
+|---|---|
+| Location | Push target | Used for |
+|---|---|---|
+| `data/raw/` | **`content`** via admin ingest | Desk workflow |
+| `ml/editor/dataset/*.csv` | **`ml_train_urgency`** | Urgency model training |
+| `ml/adaptation/dataset/*.csv` | **`ml_train_adaptation`** | CAE model training |
+| `artifacts/models/…` | (trained artifacts) | Inference |
+
+**Relevancy:** TF-IDF + cosine over **desk-published** `content` only (after publisher sets `status=published`). No history CSV corpus.
+
+**Evidence flow:** create news/article with evidence → validate → `POST /journalist/credibility` with `content_id`.
+
+**Push commands:** console *Push urgency* / *Push CAE*, or `python -m ml.training --push-only`.
+
+---
+
+## Config
+
+Copy `ENV.example` → `.env`.  
+`config/db_config.py` + `config/runtime.py` load it automatically.
+
+Auth uses **JWT** (HS256) access tokens returned as `session_token`.  
+`NEWSROOM_JWT_SECRET` is **required** in `.env` (no hardcoded secret in code). Logout revokes the token `jti` in-process until expiry.
+
+Database bootstrap is a single file: `database/newsmind.sql` (`python app.py --init-db`).
+
+Temp desk/probe data (metro stories, evidence, pitches): `database/seed_temp_data.sql` — run after init-db:
+
+```powershell
+python -c "from pathlib import Path; from database.connection import apply_sql_file; apply_sql_file(Path('database/seed_temp_data.sql'))"
+```
+
+---
+
+## Start
+
+```powershell
+cd "G:\NewsMind AI\NewsMindAI V2"
+$env:PYTHONPATH = "G:\NewsMind AI\NewsMindAI V2"
+python -m pip install -r requirements.txt
+python app.py --init-db
+python app.py
+```
+
+```powershell
+$env:PYTHONPATH = "G:\NewsMind AI\NewsMindAI V2"
+uvicorn api.main:app --reload
+```
+
+Open **http://127.0.0.1:8000/docs** or **http://127.0.0.1:8000/easy**
+
+### Demo logins
+
+| Username | Password |
+|---|---|
+| `admin` | `Admin@NewsMind2026!` |
+| `journalist` | `Journalist@NewsMind2026!` |
+| `editor` | `Editor@NewsMind2026!` |
+| `publisher` | `Publisher@NewsMind2026!` |
+| `manager` | `Manager@NewsMind2026!` |
+| `analyst` | `Analyst@NewsMind2026!` |
+| `adapter` | `Adapter@NewsMind2026!` |
+
+### ML training
+
+```powershell
+python -m ml.training --push-only
+python -m ml.training --all --fast
+```
+
+Admin console **ML TRAINING** auto-detects every `*.csv` under the dataset folders, pushes new/changed files (hash skip), then trains.
+
+================================================================================
+FILE: config/constants.py
+================================================================================
+"""Application constants — roles/RBAC match your main config/constants.py."""
+
+from __future__ import annotations
+
+import os
+
+from config.env_loader import load_dotenv
+
+load_dotenv()
+
+ALLOWED_CONTENT_STATUSES = ("draft", "submitted", "approved", "rejected", "published", "rework")
+ALLOWED_PITCH_STATUSES = ("submitted", "approved", "rejected", "hold", "closed")
+ALLOWED_ACCOUNT_STATUSES = ("active", "inactive", "locked")
+
+MIN_TITLE_LENGTH = 5
+MIN_BODY_LENGTH = 40
+MAX_TITLE_LENGTH = 512
+
+CONTENT_KINDS = ("article", "news")
+
+# Topics the category model is trained to predict (+ a few manual desk labels)
+DEFAULT_CATEGORIES = (
+    "Politics",
+    "Sports",
+    "Business",
+    "Entertainment",
+    "World",
+    "City",
+    "Weather",
+)
+
+# Roles (your ERD desks + admin)
+ROLE_ADMIN = "administrator"
+ROLE_AUDIENCE_ANALYST = "audience_insight_analyst"
+ROLE_JOURNALIST = "journalist"
+ROLE_EDITOR = "editor"
+ROLE_ADAPTATION_EDITOR = "content_adaptation_editor"
+ROLE_PUBLISHER = "publisher"
+ROLE_NEWSROOM_MANAGER = "newsroom_manager"
+
+ALL_ROLES = (
+    ROLE_ADMIN,
+    ROLE_AUDIENCE_ANALYST,
+    ROLE_JOURNALIST,
+    ROLE_EDITOR,
+    ROLE_ADAPTATION_EDITOR,
+    ROLE_PUBLISHER,
+    ROLE_NEWSROOM_MANAGER,
+)
+
+ROLE_DISPLAY_NAMES = {
+    ROLE_ADMIN: "Administrator",
+    ROLE_AUDIENCE_ANALYST: "Audience Insight Analyst",
+    ROLE_JOURNALIST: "Journalist",
+    ROLE_EDITOR: "Editor",
+    ROLE_ADAPTATION_EDITOR: "Content Adaptation Editor",
+    ROLE_PUBLISHER: "Publisher",
+    ROLE_NEWSROOM_MANAGER: "Newsroom Manager",
+}
+
+# CAE target platforms
+PLATFORM_SOCIAL = "SOCIAL_MEDIA"
+PLATFORM_PRINT = "PRINT_NEWSPAPER"
+PLATFORM_WEB = "WEBSITE"
+PLATFORM_EMAIL = "EMAIL_NEWSLETTER"
+ADAPTATION_PLATFORMS = (PLATFORM_SOCIAL, PLATFORM_PRINT, PLATFORM_WEB, PLATFORM_EMAIL)
+PLATFORM_SENTENCE_LIMITS = {
+    PLATFORM_SOCIAL: 2,
+    PLATFORM_EMAIL: 5,
+    PLATFORM_PRINT: 8,
+    PLATFORM_WEB: 10,
+}
+
+PUBLICATION_TEMPLATES = (
+    {"code": "web_standard", "name": "Website standard", "channel": "website"},
+    {"code": "print_column", "name": "Print column", "channel": "print"},
+    {"code": "social_short", "name": "Social short", "channel": "social"},
+    {"code": "newsletter", "name": "Email newsletter", "channel": "email"},
+)
+
+# Capability keys for RBAC (pipeline / desks)
+CAP_INGEST = "ingest"
+CAP_CLEAN = "clean"
+CAP_PERSIST = "persist"
+CAP_PIPELINE = "pipeline"
+CAP_PITCH_REVIEW = "pitch_review"
+CAP_CONTENT_REVIEW = "content_review"
+CAP_ASSIGN = "assign"
+CAP_ADAPT = "adapt"
+CAP_PUBLISH = "publish"
+CAP_ANALYTICS = "analytics"
+CAP_ADMIN = "admin"
+CAP_MANAGE_USERS = "manage_users"
+CAP_JOURNALIST_TOOLS = "journalist_tools"
+
+ROLE_CAPABILITIES = {
+    ROLE_ADMIN: (
+        CAP_INGEST,
+        CAP_CLEAN,
+        CAP_PERSIST,
+        CAP_PIPELINE,
+        CAP_PITCH_REVIEW,
+        CAP_CONTENT_REVIEW,
+        CAP_ASSIGN,
+        CAP_ADAPT,
+        CAP_PUBLISH,
+        CAP_ANALYTICS,
+        CAP_ADMIN,
+        CAP_MANAGE_USERS,
+        CAP_JOURNALIST_TOOLS,
+    ),
+    # Analyst uses /aia only (not editor pitch-review desk)
+    ROLE_AUDIENCE_ANALYST: (CAP_INGEST, CAP_CLEAN, CAP_ANALYTICS),
+    ROLE_JOURNALIST: (
+        CAP_INGEST,
+        CAP_CLEAN,
+        CAP_PERSIST,
+        CAP_PIPELINE,
+        CAP_JOURNALIST_TOOLS,
+    ),
+    ROLE_EDITOR: (CAP_PITCH_REVIEW, CAP_CONTENT_REVIEW, CAP_ASSIGN, CAP_ANALYTICS),
+    ROLE_ADAPTATION_EDITOR: (CAP_ADAPT,),
+    ROLE_PUBLISHER: (CAP_PUBLISH,),
+    ROLE_NEWSROOM_MANAGER: (
+        CAP_PITCH_REVIEW,
+        CAP_CONTENT_REVIEW,
+        CAP_ASSIGN,
+        CAP_ADAPT,
+        CAP_PUBLISH,
+        CAP_ANALYTICS,
+        CAP_MANAGE_USERS,
+    ),
+}
+
+# Security (same policy as main app)
+PASSWORD_HASH_ITERATIONS = 120_000
+PASSWORD_SALT_BYTES = 16
+SESSION_TTL_HOURS = 12
+LOGIN_LOCKOUT_MINUTES = 15
+MAX_LOGIN_FAILURES = 5
+
+# JWT access tokens (HS256). NEWSROOM_JWT_SECRET must be set in .env (no code fallback).
+JWT_ALGORITHM = "HS256"
+
+
+def get_jwt_secret() -> str:
+    load_dotenv()
+    secret = os.environ.get("NEWSROOM_JWT_SECRET", "").strip()
+    if not secret:
+        raise RuntimeError(
+            "NEWSROOM_JWT_SECRET is not set. Add it to your .env file (see ENV.example)."
+        )
+    return secret
+
+# Demo passwords (local only)
+DEMO_PASSWORDS = {
+    "admin": "Admin@NewsMind2026!",
+    "analyst": "Analyst@NewsMind2026!",
+    "journalist": "Journalist@NewsMind2026!",
+    "editor": "Editor@NewsMind2026!",
+    "adapter": "Adapter@NewsMind2026!",
+    "publisher": "Publisher@NewsMind2026!",
+    "manager": "Manager@NewsMind2026!",
+}
+
+================================================================================
+FILE: modules/authentication/security.py
+================================================================================
+"""Password hashing (stdlib) + JWT access tokens (PyJWT)."""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import os
+import secrets
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+import jwt
+
+from config.constants import (
+    JWT_ALGORITHM,
+    PASSWORD_HASH_ITERATIONS,
+    PASSWORD_SALT_BYTES,
+    SESSION_TTL_HOURS,
+    get_jwt_secret,
+)
+
+
+def hash_password(password: str, salt: bytes | None = None) -> str:
+    """Return stored form: salt_hex$digest_hex (single ERD password_hash field)."""
+    if not password:
+        raise ValueError("Password must not be empty")
+    salt_bytes = salt if salt is not None else os.urandom(PASSWORD_SALT_BYTES)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt_bytes,
+        PASSWORD_HASH_ITERATIONS,
+    )
+    return f"{salt_bytes.hex()}${digest.hex()}"
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        salt_hex, digest_hex = password_hash.split("$", 1)
+        candidate = hash_password(password, salt=bytes.fromhex(salt_hex))
+        return hmac.compare_digest(candidate, password_hash)
+    except (ValueError, TypeError):
+        return False
+
+
+def create_access_token(*, user_id: int, username: str, role_code: str = "") -> str:
+    """Create a signed JWT access token (HS256)."""
+    now = datetime.now(timezone.utc)
+    payload: dict[str, Any] = {
+        "sub": str(user_id),
+        "user_id": int(user_id),
+        "username": username,
+        "role_code": role_code or "",
+        "iat": now,
+        "exp": now + timedelta(hours=SESSION_TTL_HOURS),
+        "jti": secrets.token_urlsafe(16),
+        "type": "access",
+    }
+    return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
+
+
+def decode_access_token(token: str) -> dict[str, Any]:
+    """Decode and validate a JWT. Raises jwt.PyJWTError on failure."""
+    return jwt.decode(
+        token,
+        get_jwt_secret(),
+        algorithms=[JWT_ALGORITHM],
+        options={"require": ["exp", "sub", "jti"]},
+    )
+
+================================================================================
+FILE: modules/authentication/auth_service.py
+================================================================================
+"""Login / logout / JWT resolve.
+
+Login: **username** + password (email on employee only).
+Access tokens are signed JWTs (HS256). User/role are re-loaded from DB on each request.
+Logout uses an in-memory jti denylist (process-local) plus clears the CLI token file.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+import jwt
+
+from dao.user_dao import UserDAO
+from modules.authentication.security import (
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    verify_password,
+)
+from repository.user_repository import UserRepository
+from services.permission_service import capabilities_for_role
+from utils.errors import ValidationError
+from utils.helpers import project_path
+from utils.validators import require_password, require_username
+
+SESSION_FILE = project_path("logs", ".session_token")
+
+# jti values revoked before natural JWT expiry (logout). Process-local.
+_REVOKED_JTI: dict[str, datetime] = {}
+
+
+class AuthenticationError(Exception):
+    pass
+
+
+def _purge_expired_revocations() -> None:
+    now = datetime.now(timezone.utc)
+    expired = [jti for jti, exp in _REVOKED_JTI.items() if exp <= now]
+    for jti in expired:
+        _REVOKED_JTI.pop(jti, None)
+
+
+def _revoke_jti(jti: str, expires_at: datetime) -> None:
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    _REVOKED_JTI[jti] = expires_at
+
+
+def _is_revoked(jti: str) -> bool:
+    _purge_expired_revocations()
+    exp = _REVOKED_JTI.get(jti)
+    if exp is None:
+        return False
+    if exp <= datetime.now(timezone.utc):
+        _REVOKED_JTI.pop(jti, None)
+        return False
+    return True
+
+
+def _save_cli_token(user_id: int, token: str, expires_at: datetime) -> None:
+    """CLI convenience: last login JWT so resolve_session() works without Bearer."""
+    SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SESSION_FILE.write_text(
+        json.dumps(
+            {
+                "user_id": user_id,
+                "token": token,
+                "expires_at": expires_at.isoformat(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _load_cli_token() -> Optional[str]:
+    if not SESSION_FILE.exists():
+        return None
+    try:
+        data = json.loads(SESSION_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    token = str(data.get("token") or "").strip()
+    return token or None
+
+
+def _clear_cli_token() -> None:
+    if SESSION_FILE.exists():
+        SESSION_FILE.unlink()
+
+
+def _user_payload(user: dict[str, Any]) -> dict[str, Any]:
+    role_code = str(user.get("role_code") or "")
+    profiles = UserRepository().get_profile_ids(int(user["user_id"]))
+    return {
+        "user_id": int(user["user_id"]),
+        "username": user["username"],
+        "email": user.get("email"),
+        "full_name": f"{user.get('first_name', '')} {user.get('last_name', '')}".strip(),
+        "role_code": role_code,
+        "role_name": user.get("role_name"),
+        "capabilities": list(capabilities_for_role(role_code)),
+        "profiles": profiles,
+    }
+
+
+def authenticate(
+    username: str,
+    password: str,
+    *,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> dict[str, Any]:
+    del ip_address, user_agent  # reserved for future audit
+    username = (username or "").strip()
+    if not username or not password:
+        raise AuthenticationError("Username and password are required.")
+
+    users = UserDAO()
+    user = users.read_by_username(username)
+    if user is None:
+        raise AuthenticationError("Invalid username or password.")
+
+    if user.get("account_status") != "active":
+        raise AuthenticationError("This account is inactive.")
+
+    if not verify_password(password, user["password_hash"]):
+        raise AuthenticationError("Invalid username or password.")
+
+    users.record_login_success(int(user["user_id"]))
+    token = create_access_token(
+        user_id=int(user["user_id"]),
+        username=str(user["username"]),
+        role_code=str(user.get("role_code") or ""),
+    )
+    claims = decode_access_token(token)
+    exp = claims.get("exp")
+    if isinstance(exp, (int, float)):
+        expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
+    else:
+        expires_at = datetime.now(timezone.utc)
+    _save_cli_token(int(user["user_id"]), token, expires_at)
+
+    payload = _user_payload(user)
+    payload["session_token"] = token  # JWT; field name kept for API compatibility
+    return payload
+
+
+def resolve_session(session_token: str | None = None) -> dict[str, Any]:
+    token = (session_token or "").strip() or (_load_cli_token() or "")
+    if not token:
+        raise AuthenticationError("Invalid or expired session.")
+
+    try:
+        claims = decode_access_token(token)
+    except jwt.ExpiredSignatureError as exc:
+        raise AuthenticationError("Invalid or expired session.") from exc
+    except jwt.PyJWTError as exc:
+        raise AuthenticationError("Invalid or expired session.") from exc
+
+    jti = str(claims.get("jti") or "")
+    if jti and _is_revoked(jti):
+        raise AuthenticationError("Invalid or expired session.")
+
+    user_id = claims.get("user_id") or claims.get("sub")
+    try:
+        user_id_int = int(user_id)
+    except (TypeError, ValueError) as exc:
+        raise AuthenticationError("Invalid or expired session.") from exc
+
+    user = UserDAO().read_by_id(user_id_int)
+    if not user or user.get("account_status") != "active":
+        raise AuthenticationError("Invalid or expired session.")
+    return _user_payload(user)
+
+
+def logout(session_token: str | None = None) -> None:
+    token = (session_token or "").strip()
+    if token:
+        try:
+            claims = decode_access_token(token)
+            jti = str(claims.get("jti") or "")
+            exp = claims.get("exp")
+            if jti and isinstance(exp, (int, float)):
+                _revoke_jti(jti, datetime.fromtimestamp(exp, tz=timezone.utc))
+        except jwt.PyJWTError:
+            pass
+        file_token = _load_cli_token()
+        if file_token and file_token == token:
+            _clear_cli_token()
+        return
+
+    # Console logout with no explicit token: revoke CLI JWT if present, clear file.
+    file_token = _load_cli_token()
+    if file_token:
+        try:
+            claims = decode_access_token(file_token)
+            jti = str(claims.get("jti") or "")
+            exp = claims.get("exp")
+            if jti and isinstance(exp, (int, float)):
+                _revoke_jti(jti, datetime.fromtimestamp(exp, tz=timezone.utc))
+        except jwt.PyJWTError:
+            pass
+    _clear_cli_token()
+
+
+def change_password(user_id: int, current_password: str, new_password: str) -> None:
+    """Logged-in user changes their own password (must know current password)."""
+    if not current_password:
+        raise ValidationError("Current password cannot be empty.")
+    new_password = require_password(new_password)
+    if current_password == new_password:
+        raise ValidationError("New password must be different from the current password.")
+
+    users = UserDAO()
+    user = users.require(int(user_id))
+    if not verify_password(current_password, user["password_hash"]):
+        raise AuthenticationError("Current password is incorrect.")
+    users.update_password_hash(int(user["user_id"]), hash_password(new_password))
+
+
+def admin_reset_password(username: str, new_password: str) -> dict[str, Any]:
+    """Administrator sets a new password for any user (no old password required)."""
+    username = require_username(username)
+    new_password = require_password(new_password)
+    users = UserDAO()
+    user = users.read_by_username(username)
+    if user is None:
+        raise AuthenticationError(f"User '{username}' was not found.")
+    users.update_password_hash(int(user["user_id"]), hash_password(new_password))
+    return {"user_id": int(user["user_id"]), "username": user["username"]}
+
+================================================================================
+FILE: api/deps.py
+================================================================================
+"""FastAPI dependencies — Bearer session token → current user."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from modules.authentication.auth_service import AuthenticationError, resolve_session
+
+bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def get_session_token(
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> str:
+    if creds is None or not creds.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Login first, then Authorize with your JWT session_token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return creds.credentials.strip()
+
+
+def get_current_user(token: str = Depends(get_session_token)) -> dict[str, Any]:
+    try:
+        return resolve_session(token)
+    except AuthenticationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+================================================================================
+FILE: api/main.py
+================================================================================
+"""FastAPI app — Swagger UI at /docs."""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+
+from api.http_errors import raise_http_error
+from api.routers import (
+    admin_router,
+    aia_router,
+    auth_router,
+    cae_router,
+    editor_router,
+    journalist_router,
+    manager_router,
+    publisher_router,
+)
+from config.env_loader import load_dotenv
+from modules.authentication.auth_service import AuthenticationError
+from utils.errors import AppError
+from utils.logger import get_logger
+
+log = get_logger("api")
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+OPENAPI_TAGS = [
+    {
+        "name": "1. Login",
+        "description": "Login, logout, change password, admin reset. Authorize with Bearer token.",
+    },
+    {
+        "name": "2. Journalist tools",
+        "description": "AI tools + desk content (news/articles/evidence).",
+    },
+    {
+        "name": "3. Audience Insight Analyst",
+        "description": "Heuristic engagement/interest, category/trends, performance loop, story pitches.",
+    },
+    {
+        "name": "4. Content Adaptation (CAE)",
+        "description": "Adapt articles for social, print, web, and newsletter; review drafts.",
+    },
+    {
+        "name": "5. Publisher",
+        "description": "Publication queue, templates, preview, publish, and schedule.",
+    },
+    {
+        "name": "6. Editor",
+        "description": "Pitch review, content review, and assignment.",
+    },
+    {
+        "name": "7. Newsroom Manager",
+        "description": "Desk overview plus pitch/content review and assignment.",
+    },
+    {
+        "name": "8. Admin",
+        "description": "Data pipeline (ingest/clean/persist) and user/category admin.",
+    },
+]
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    load_dotenv()
+    log.info("NewsMind API started. Swagger: /docs")
+    yield
+
+
+def create_app() -> FastAPI:
+    application = FastAPI(
+        title="NewsMind API",
+        summary="Login once, Authorize, then use role tools in Swagger.",
+        description=(
+            "### Quick start\n"
+            "1. Open **1. Login** → `POST /auth/login` → Try it out\n"
+            "2. Copy `session_token` (JWT) from the response\n"
+            "3. Click **Authorize** → paste token → Authorize\n"
+            "4. Use role endpoints (Journalist, AIA, CAE, Publisher, Editor, Manager)\n\n"
+            "### Password rules (change/reset)\n"
+            "Min 10 characters, with uppercase, lowercase, digit, and special character.\n\n"
+            "Models: `artifacts/models/editor_queue_urgency/` (editor review urgency) and "
+            "`cae/` (unified content adaptation). Engagement/interest/trend are formulas; "
+            "category is manual entry (no category model).\n\n"
+            "Simple tester UI (easier than Swagger): **/easy**"
+        ),
+        version="0.3.0",
+        lifespan=lifespan,
+        docs_url="/docs",
+        redoc_url=None,
+        openapi_tags=OPENAPI_TAGS,
+        swagger_ui_parameters={
+            "docExpansion": "list",
+            "defaultModelsExpandDepth": -1,
+            "defaultModelExpandDepth": 1,
+            "filter": True,
+            "tryItOutEnabled": True,
+            "persistAuthorization": True,
+        },
+    )
+
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @application.get("/easy", include_in_schema=False)
+    def easy_tester() -> FileResponse:
+        return FileResponse(STATIC_DIR / "easy.html")
+
+    @application.exception_handler(RequestValidationError)
+    async def validation_exception_handler(
+        _request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
+        errors = []
+        for err in exc.errors():
+            loc = ".".join(str(part) for part in err.get("loc", ()) if part != "body")
+            errors.append({"field": loc or "body", "message": err.get("msg", "Invalid value")})
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": "Validation failed", "errors": errors},
+        )
+
+    @application.exception_handler(HTTPException)
+    async def http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+    @application.exception_handler(AppError)
+    async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
+        try:
+            raise_http_error(exc)
+        except HTTPException as http_exc:
+            return JSONResponse(
+                status_code=http_exc.status_code,
+                content={"detail": http_exc.detail},
+            )
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    @application.exception_handler(AuthenticationError)
+    async def authentication_error_handler(
+        _request: Request,
+        exc: AuthenticationError,
+    ) -> JSONResponse:
+        return JSONResponse(status_code=401, content={"detail": str(exc)})
+
+    @application.exception_handler(Exception)
+    async def unhandled_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
+        log.exception("Unhandled API exception: %s", exc)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": f"Internal error: {exc}"},
+        )
+
+    application.include_router(auth_router)
+    application.include_router(journalist_router)
+    application.include_router(aia_router)
+    application.include_router(cae_router)
+    application.include_router(publisher_router)
+    application.include_router(editor_router)
+    application.include_router(manager_router)
+    application.include_router(admin_router)
+    return application
+
+
+app = create_app()
+
+================================================================================
+FILE: api/routers/auth.py
+================================================================================
+"""Login, logout, change password, admin reset."""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from api.deps import get_current_user, get_session_token
+from api.http_errors import raise_http_error
+from api.schemas.auth import (
+    AdminResetPasswordRequest,
+    ChangePasswordRequest,
+    LoginRequest,
+    LoginResponse,
+    MessageResponse,
+)
+from config.constants import CAP_MANAGE_USERS
+from modules.authentication.auth_service import (
+    AuthenticationError,
+    authenticate,
+    change_password,
+    logout,
+)
+from services.access import require_capability_session
+from services.user import UserService
+from utils.errors import AuthError, PermissionDeniedError, ValidationError
+
+router = APIRouter(prefix="/auth", tags=["1. Login"])
+_APP_ERRORS = (AuthError, PermissionDeniedError, ValidationError)
+
+
+@router.post(
+    "/login",
+    response_model=LoginResponse,
+    summary="Login",
+    description="Returns a JWT in `session_token`. Click **Authorize**, choose Bearer, paste the token.",
+)
+def login(body: LoginRequest) -> LoginResponse:
+    try:
+        payload = authenticate(body.username, body.password)
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    return LoginResponse(
+        session_token=str(payload["session_token"]),
+        user_id=int(payload["user_id"]),
+        username=str(payload["username"]),
+        role_code=str(payload["role_code"]),
+        capabilities=list(payload.get("capabilities") or []),
+    )
+
+
+@router.post("/logout", response_model=MessageResponse, summary="Logout")
+def do_logout(token: str = Depends(get_session_token)) -> MessageResponse:
+    logout(token)
+    return MessageResponse(message="Logged out.")
+
+
+@router.post("/change-password", response_model=MessageResponse, summary="Change password")
+def do_change_password(
+    body: ChangePasswordRequest,
+    user: dict = Depends(get_current_user),
+):
+    try:
+        change_password(int(user["user_id"]), body.current_password, body.new_password)
+        return MessageResponse(message="Password changed.")
+    except ValidationError as exc:
+        raise_http_error(exc)
+    except AuthenticationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/admin/reset-password",
+    response_model=MessageResponse,
+    summary="Admin reset password",
+)
+def do_admin_reset_password(
+    body: AdminResetPasswordRequest,
+    token: str = Depends(get_session_token),
+):
+    try:
+        require_capability_session(CAP_MANAGE_USERS, token)
+        UserService().reset_password(body.username, body.new_password, session_token=token)
+        return MessageResponse(message=f"Password reset for {body.username}.")
+    except _APP_ERRORS as exc:
+        raise_http_error(exc)
+
+================================================================================
+FILE: api/schemas/auth.py
+================================================================================
+"""Auth request/response bodies."""
+
+from __future__ import annotations
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from api.schemas.common import MessageResponse
+from api.schemas.rules import LoginPasswordStr, StrongPasswordStr, UsernameStr
+
+__all__ = [
+    "LoginRequest",
+    "LoginResponse",
+    "ChangePasswordRequest",
+    "AdminResetPasswordRequest",
+    "MessageResponse",
+]
+
+
+class LoginRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {"username": "journalist", "password": "Journalist@NewsMind2026!"}
+            ]
+        }
+    )
+
+    username: UsernameStr
+    password: LoginPasswordStr
+
+
+class LoginResponse(BaseModel):
+    session_token: str = Field(
+        description="JWT access token. Paste into Swagger Authorize as Bearer token."
+    )
+    user_id: int
+    username: str
+    role_code: str
+    capabilities: list[str] = []
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: LoginPasswordStr
+    new_password: StrongPasswordStr = Field(
+        ...,
+        description="Min 10 chars with upper, lower, digit, and special character.",
+    )
+
+
+class AdminResetPasswordRequest(BaseModel):
+    username: UsernameStr
+    new_password: StrongPasswordStr = Field(
+        ...,
+        description="Min 10 chars with upper, lower, digit, and special character.",
+    )

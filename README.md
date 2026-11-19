@@ -38,6 +38,9 @@ Console newsroom backend plus FastAPI role APIs (Swagger at `/docs`).
 Copy `ENV.example` → `.env`.  
 `config/db_config.py` + `config/runtime.py` load it automatically.
 
+Auth uses **JWT** (HS256) access tokens returned as `session_token`.  
+`NEWSROOM_JWT_SECRET` is **required** in `.env` (no hardcoded secret in code). Logout revokes the token `jti` in-process until expiry.
+
 Database bootstrap is a single file: `database/newsmind.sql` (`python app.py --init-db`).
 
 Temp desk/probe data (metro stories, evidence, pitches): `database/seed_temp_data.sql` — run after init-db:

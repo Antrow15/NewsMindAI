@@ -1,19 +1,25 @@
-"""Login / logout / session resolve.
+"""Login / logout / JWT resolve.
 
 Login: **username** + password (email on employee only).
-Sessions are application-layer (no user_session table in your ERD).
+Access tokens are signed JWTs (HS256). User/role are re-loaded from DB on each request.
+Logout uses an in-memory jti denylist (process-local) plus clears the CLI token file.
 """
 
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any, Optional
 
-from config.constants import SESSION_TTL_HOURS
+import jwt
+
 from dao.user_dao import UserDAO
-from modules.authentication.security import generate_session_token, hash_password, verify_password
+from modules.authentication.security import (
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    verify_password,
+)
 from repository.user_repository import UserRepository
 from services.permission_service import capabilities_for_role
 from utils.errors import ValidationError
@@ -22,82 +28,67 @@ from utils.validators import require_password, require_username
 
 SESSION_FILE = project_path("logs", ".session_token")
 
-# API sessions: token → {user_id, expires_at} (simple in-memory store)
-_API_SESSIONS: dict[str, dict[str, Any]] = {}
+# jti values revoked before natural JWT expiry (logout). Process-local.
+_REVOKED_JTI: dict[str, datetime] = {}
 
 
 class AuthenticationError(Exception):
     pass
 
 
-def _expires_at() -> datetime:
-    return datetime.now(timezone.utc) + timedelta(hours=SESSION_TTL_HOURS)
+def _purge_expired_revocations() -> None:
+    now = datetime.now(timezone.utc)
+    expired = [jti for jti, exp in _REVOKED_JTI.items() if exp <= now]
+    for jti in expired:
+        _REVOKED_JTI.pop(jti, None)
 
 
-def _parse_expires(expires_raw: str) -> Optional[datetime]:
-    if not expires_raw:
-        return None
-    expires = datetime.fromisoformat(expires_raw)
-    if expires.tzinfo is None:
-        expires = expires.replace(tzinfo=timezone.utc)
-    return expires
+def _revoke_jti(jti: str, expires_at: datetime) -> None:
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    _REVOKED_JTI[jti] = expires_at
 
 
-def _is_expired(expires: Optional[datetime]) -> bool:
-    if expires is None:
-        return True
-    return expires <= datetime.now(timezone.utc)
+def _is_revoked(jti: str) -> bool:
+    _purge_expired_revocations()
+    exp = _REVOKED_JTI.get(jti)
+    if exp is None:
+        return False
+    if exp <= datetime.now(timezone.utc):
+        _REVOKED_JTI.pop(jti, None)
+        return False
+    return True
 
 
-def _save_session(user_id: int, token: str) -> None:
-    """CLI file session (single active console user) + API token map."""
-    expires = _expires_at()
+def _save_cli_token(user_id: int, token: str, expires_at: datetime) -> None:
+    """CLI convenience: last login JWT so resolve_session() works without Bearer."""
     SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
     SESSION_FILE.write_text(
         json.dumps(
             {
                 "user_id": user_id,
                 "token": token,
-                "expires_at": expires.isoformat(),
+                "expires_at": expires_at.isoformat(),
             }
         ),
         encoding="utf-8",
     )
-    _API_SESSIONS[token] = {"user_id": user_id, "expires_at": expires.isoformat()}
 
 
-def _load_session() -> Optional[dict[str, Any]]:
+def _load_cli_token() -> Optional[str]:
     if not SESSION_FILE.exists():
         return None
     try:
         data = json.loads(SESSION_FILE.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
-    expires = _parse_expires(str(data.get("expires_at") or ""))
-    if _is_expired(expires):
-        return None
-    return data
+    token = str(data.get("token") or "").strip()
+    return token or None
 
 
-def _load_api_session(token: str) -> Optional[dict[str, Any]]:
-    data = _API_SESSIONS.get(token)
-    if not data:
-        # Fall back to CLI file if token matches
-        file_data = _load_session()
-        if file_data and file_data.get("token") == token:
-            return file_data
-        return None
-    expires = _parse_expires(str(data.get("expires_at") or ""))
-    if _is_expired(expires):
-        _API_SESSIONS.pop(token, None)
-        return None
-    return data
-
-
-def _clear_session() -> None:
+def _clear_cli_token() -> None:
     if SESSION_FILE.exists():
         SESSION_FILE.unlink()
-    _API_SESSIONS.clear()
 
 
 def _user_payload(user: dict[str, Any]) -> dict[str, Any]:
@@ -122,7 +113,7 @@ def authenticate(
     ip_address: Optional[str] = None,
     user_agent: Optional[str] = None,
 ) -> dict[str, Any]:
-    del ip_address, user_agent  # reserved for future audit; no DB session row
+    del ip_address, user_agent  # reserved for future audit
     username = (username or "").strip()
     if not username or not password:
         raise AuthenticationError("Username and password are required.")
@@ -139,35 +130,80 @@ def authenticate(
         raise AuthenticationError("Invalid username or password.")
 
     users.record_login_success(int(user["user_id"]))
-    token = generate_session_token()
-    _save_session(int(user["user_id"]), token)
+    token = create_access_token(
+        user_id=int(user["user_id"]),
+        username=str(user["username"]),
+        role_code=str(user.get("role_code") or ""),
+    )
+    claims = decode_access_token(token)
+    exp = claims.get("exp")
+    if isinstance(exp, (int, float)):
+        expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
+    else:
+        expires_at = datetime.now(timezone.utc)
+    _save_cli_token(int(user["user_id"]), token, expires_at)
+
     payload = _user_payload(user)
-    payload["session_token"] = token
+    payload["session_token"] = token  # JWT; field name kept for API compatibility
     return payload
 
 
 def resolve_session(session_token: str | None = None) -> dict[str, Any]:
-    if session_token:
-        data = _load_api_session(session_token)
-    else:
-        data = _load_session()
-    if not data:
+    token = (session_token or "").strip() or (_load_cli_token() or "")
+    if not token:
         raise AuthenticationError("Invalid or expired session.")
-    user = UserDAO().read_by_id(int(data["user_id"]))
+
+    try:
+        claims = decode_access_token(token)
+    except jwt.ExpiredSignatureError as exc:
+        raise AuthenticationError("Invalid or expired session.") from exc
+    except jwt.PyJWTError as exc:
+        raise AuthenticationError("Invalid or expired session.") from exc
+
+    jti = str(claims.get("jti") or "")
+    if jti and _is_revoked(jti):
+        raise AuthenticationError("Invalid or expired session.")
+
+    user_id = claims.get("user_id") or claims.get("sub")
+    try:
+        user_id_int = int(user_id)
+    except (TypeError, ValueError) as exc:
+        raise AuthenticationError("Invalid or expired session.") from exc
+
+    user = UserDAO().read_by_id(user_id_int)
     if not user or user.get("account_status") != "active":
         raise AuthenticationError("Invalid or expired session.")
     return _user_payload(user)
 
 
 def logout(session_token: str | None = None) -> None:
-    if session_token:
-        _API_SESSIONS.pop(session_token, None)
-        file_data = _load_session()
-        if file_data and file_data.get("token") == session_token:
-            if SESSION_FILE.exists():
-                SESSION_FILE.unlink()
+    token = (session_token or "").strip()
+    if token:
+        try:
+            claims = decode_access_token(token)
+            jti = str(claims.get("jti") or "")
+            exp = claims.get("exp")
+            if jti and isinstance(exp, (int, float)):
+                _revoke_jti(jti, datetime.fromtimestamp(exp, tz=timezone.utc))
+        except jwt.PyJWTError:
+            pass
+        file_token = _load_cli_token()
+        if file_token and file_token == token:
+            _clear_cli_token()
         return
-    _clear_session()
+
+    # Console logout with no explicit token: revoke CLI JWT if present, clear file.
+    file_token = _load_cli_token()
+    if file_token:
+        try:
+            claims = decode_access_token(file_token)
+            jti = str(claims.get("jti") or "")
+            exp = claims.get("exp")
+            if jti and isinstance(exp, (int, float)):
+                _revoke_jti(jti, datetime.fromtimestamp(exp, tz=timezone.utc))
+        except jwt.PyJWTError:
+            pass
+    _clear_cli_token()
 
 
 def change_password(user_id: int, current_password: str, new_password: str) -> None:

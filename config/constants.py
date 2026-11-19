@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+import os
+
+from config.env_loader import load_dotenv
+
+load_dotenv()
+
 ALLOWED_CONTENT_STATUSES = ("draft", "submitted", "approved", "rejected", "published", "rework")
 ALLOWED_PITCH_STATUSES = ("submitted", "approved", "rejected", "hold", "closed")
 ALLOWED_ACCOUNT_STATUSES = ("active", "inactive", "locked")
@@ -132,6 +138,19 @@ PASSWORD_SALT_BYTES = 16
 SESSION_TTL_HOURS = 12
 LOGIN_LOCKOUT_MINUTES = 15
 MAX_LOGIN_FAILURES = 5
+
+# JWT access tokens (HS256). NEWSROOM_JWT_SECRET must be set in .env (no code fallback).
+JWT_ALGORITHM = "HS256"
+
+
+def get_jwt_secret() -> str:
+    load_dotenv()
+    secret = os.environ.get("NEWSROOM_JWT_SECRET", "").strip()
+    if not secret:
+        raise RuntimeError(
+            "NEWSROOM_JWT_SECRET is not set. Add it to your .env file (see ENV.example)."
+        )
+    return secret
 
 # Demo passwords (local only)
 DEMO_PASSWORDS = {

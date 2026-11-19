@@ -1,0 +1,18 @@
+erDiagram
+  employee ||--|| users : has
+  role ||--o{ users : assigns
+  users ||--o| journalist : profile
+  users ||--o| editor : profile
+  users ||--o| publisher : profile
+  users ||--o| audience_insight_analyst : profile
+  users ||--o| content_adaptation_editor : profile
+  users ||--o| newsroom_manager : profile
+  journalist ||--o{ content : authors
+  content ||--o| article : specializes
+  content ||--o| news : specializes
+  content ||--o{ evidence : has
+  content ||--o| publication : publishes
+  story_pitch ||--o{ article : inspires
+  adaptation_requests ||--o{ adaptation_drafts : generates
+  adaptation_drafts ||--o{ adaptation_reviews : reviewed
+  adaptation_drafts ||--o| final_adaptations : finalized

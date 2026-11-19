@@ -32,7 +32,7 @@ _APP_ERRORS = (AuthError, PermissionDeniedError, ValidationError)
     "/login",
     response_model=LoginResponse,
     summary="Login",
-    description="Returns a session_token. Click **Authorize**, choose Bearer, paste the token.",
+    description="Returns a JWT in `session_token`. Click **Authorize**, choose Bearer, paste the token.",
 )
 def login(body: LoginRequest) -> LoginResponse:
     try:

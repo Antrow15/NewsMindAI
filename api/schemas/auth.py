@@ -30,7 +30,9 @@ class LoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    session_token: str = Field(description="Paste into Swagger Authorize as Bearer token")
+    session_token: str = Field(
+        description="JWT access token. Paste into Swagger Authorize as Bearer token."
+    )
     user_id: int
     username: str
     role_code: str

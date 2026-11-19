@@ -18,7 +18,7 @@ def get_session_token(
     if creds is None or not creds.credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Login first, then Authorize with your session_token.",
+            detail="Login first, then Authorize with your JWT session_token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     return creds.credentials.strip()

@@ -1,0 +1,53 @@
+flowchart TB
+  subgraph Clients
+    EasyUI["/easy HTML tester"]
+    Swagger["/docs Swagger UI"]
+    Console["app.py Console CLI"]
+  end
+
+  subgraph API["FastAPI api/main.py"]
+    Routers["Routers: auth journalist aia cae publisher editor manager admin"]
+    Deps["deps.py Bearer session"]
+    Schemas["Pydantic schemas"]
+  end
+
+  subgraph Modules["modules/"]
+    AuthMod["authentication"]
+    AdminMod["admin"]
+    JournMod["journalist"]
+    ContMod["content"]
+  end
+
+  subgraph Services["services/"]
+    Desk["editor manager publisher aia adaptation"]
+    Pipe["ingestion persistence report"]
+    ContentSvc["content user"]
+  end
+
+  subgraph Data["Data access"]
+    Repo["repository/"]
+    DAO["dao/"]
+    Ent["entities/"]
+    PG[(PostgreSQL)]
+  end
+
+  subgraph ML["ml/"]
+    Urgency["editor_queue_urgency"]
+    CAE["adaptation CAE"]
+    AIA["aia heuristics"]
+    Know["knowledge TF-IDF"]
+  end
+
+  EasyUI --> Routers
+  Swagger --> Routers
+  Console --> Modules
+  Routers --> Deps
+  Routers --> Schemas
+  Routers --> Modules
+  Routers --> Services
+  Modules --> Services
+  Services --> Repo
+  Services --> ML
+  Repo --> DAO
+  DAO --> Ent
+  DAO --> PG
