@@ -1,0 +1,12 @@
+{
+  "cae_adaptation": {
+    "unified": {
+      "test_f1": 1.0,
+      "test_accuracy": 1.0
+    },
+    "SOCIAL_MEDIA": {
+      "test_f1": 1.0,
+      "test_accuracy": 1.0
+    }
+  }
+}

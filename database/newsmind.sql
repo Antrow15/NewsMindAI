@@ -163,6 +163,10 @@ CREATE TABLE content (
     source_type         VARCHAR(128),
     status              VARCHAR(64) NOT NULL DEFAULT 'draft',
     current_version     INTEGER NOT NULL DEFAULT 1,
+    assigned_by_user_id BIGINT REFERENCES users(user_id),
+    assigned_at         TIMESTAMPTZ,
+    due_at              TIMESTAMPTZ,
+    assignment_note     TEXT,
     submitted_at        TIMESTAMPTZ,
     approved_at         TIMESTAMPTZ,
     published_at        TIMESTAMPTZ,
@@ -367,5 +371,20 @@ CREATE TABLE ml_train_adaptation (
 
 CREATE UNIQUE INDEX ml_train_adaptation_file_article_platform_uidx
     ON ml_train_adaptation (source_file, article_id, target_platform);
+
+CREATE TABLE notification (
+    notification_id     BIGSERIAL PRIMARY KEY,
+    user_id             BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    type                VARCHAR(64) NOT NULL,
+    title               VARCHAR(512) NOT NULL,
+    body                TEXT NOT NULL DEFAULT '',
+    payload             JSONB NOT NULL DEFAULT '{}'::jsonb,
+    read_at             TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX notification_user_unread_idx
+    ON notification (user_id, created_at DESC)
+    WHERE read_at IS NULL;
 
 COMMIT;

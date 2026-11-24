@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "threshold": 0.5,
+  "platform_thresholds": {
+    "SOCIAL_MEDIA": 0.7,
+    "EMAIL_NEWSLETTER": 0.55,
+    "PRINT_NEWSPAPER": 0.4,
+    "WEBSITE": 0.35
+  }
+}

@@ -66,8 +66,36 @@ class ManagerService:
         content_id: int,
         assignee_user_id: int,
         note: str = "",
+        *,
+        due_at=None,
+        assigner_user_id: int | None = None,
     ) -> dict[str, Any]:
-        return self.editor.assign_content(content_id, assignee_user_id, note=note)
+        return self.editor.assign_content(
+            content_id,
+            assignee_user_id,
+            note=note,
+            due_at=due_at,
+            assigner_user_id=assigner_user_id,
+        )
+
+    def assign_pitch(
+        self,
+        story_pitch_id: int,
+        assignee_user_id: int,
+        *,
+        assigner_user_id: int | None = None,
+        note: str = "",
+        due_at=None,
+        auto_approve: bool = True,
+    ) -> dict[str, Any]:
+        return self.editor.assign_pitch(
+            story_pitch_id,
+            assignee_user_id,
+            assigner_user_id=assigner_user_id,
+            note=note,
+            due_at=due_at,
+            auto_approve=auto_approve,
+        )
 
     def bottlenecks(self) -> dict[str, Any]:
         """Where work is piling up across the newsroom pipeline."""
@@ -252,9 +280,11 @@ class ManagerService:
                        COUNT(c.content_id) FILTER (WHERE c.status = 'submitted') AS submitted_items
                 FROM journalist j
                 JOIN users u ON u.user_id = j.user_id
+                JOIN role r ON r.role_id = u.role_id
                 LEFT JOIN employee e ON e.employee_id = u.employee_id
                 LEFT JOIN content c ON c.author_id = j.journalist_id
                 WHERE j.status = 'active'
+                  AND r.role_code = 'journalist'
                 GROUP BY j.journalist_id, j.user_id, u.username, e.first_name, e.last_name,
                          j.primary_specialization, j.secondary_specialization, j.availability_status
                 ORDER BY open_items DESC, j.journalist_id

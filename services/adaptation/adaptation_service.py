@@ -80,3 +80,43 @@ class AdaptationService:
         request = self.dao.require_request(request_id)
         drafts = self.dao.list_drafts_for_request(request_id)
         return {**request, "drafts": drafts}
+
+    def review_queue(self, *, limit: int = 50) -> dict[str, Any]:
+        items = self.dao.list_review_queue(limit=limit)
+        pending = sum(1 for i in items if i.get("draft_status") == "PENDING_REVIEW")
+        manual = sum(1 for i in items if i.get("draft_status") == "REQUIRES_MANUAL_REVIEW")
+        return {
+            "pending_count": pending,
+            "manual_count": manual,
+            "total": len(items),
+            "items": items,
+        }
+
+    def recent_requests(self, *, limit: int = 20) -> dict[str, Any]:
+        return {"requests": self.dao.list_recent_requests(limit=limit)}
+
+    def source_articles(self, *, limit: int = 30) -> dict[str, Any]:
+        """Approved desk stories ready for CAE (not published — those already shipped)."""
+        from database.connection import db_cursor
+
+        limit = max(1, min(int(limit), 100))
+        with db_cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    c.content_id,
+                    c.title,
+                    c.summary,
+                    COALESCE(c.content_body, c.raw_body, '') AS body,
+                    c.status,
+                    c.updated_at
+                FROM content c
+                WHERE c.status = 'approved'
+                  AND LENGTH(COALESCE(c.content_body, c.raw_body, '')) >= 20
+                ORDER BY c.updated_at DESC NULLS LAST, c.content_id DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            rows = [dict(r) for r in cur.fetchall() or []]
+        return {"articles": rows}

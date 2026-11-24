@@ -70,6 +70,10 @@ class ContentDAO(BaseDAO):
             "source_type",
             "status",
             "current_version",
+            "assigned_by_user_id",
+            "assigned_at",
+            "due_at",
+            "assignment_note",
         }
         cols = {k: v for k, v in fields.items() if k in allowed}
         if "title" in cols:
@@ -104,6 +108,42 @@ class ContentDAO(BaseDAO):
             fetch="all",
         )
         return [dict(r) for r in rows or []]
+
+    def list_by_author(
+        self,
+        author_id: int,
+        *,
+        status: str | None = None,
+        limit: int = 100,
+        assigned_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        author_id = require_positive_id(author_id, "Author ID")
+        limit = max(1, min(int(limit), 500))
+        sql = "SELECT * FROM content WHERE author_id = %s"
+        params: list[Any] = [author_id]
+        if status:
+            sql += " AND status = %s"
+            params.append(require_content_status(status))
+        if assigned_only:
+            sql += " AND assigned_at IS NOT NULL"
+        sql += " ORDER BY COALESCE(due_at, updated_at) ASC, content_id DESC LIMIT %s"
+        params.append(limit)
+        rows = self.execute(sql, tuple(params), fetch="all")
+        return [dict(r) for r in rows or []]
+
+    def count_by_author_status(self, author_id: int) -> dict[str, int]:
+        author_id = require_positive_id(author_id, "Author ID")
+        rows = self.execute(
+            """
+            SELECT status, COUNT(*) AS n
+            FROM content
+            WHERE author_id = %s
+            GROUP BY status
+            """,
+            (author_id,),
+            fetch="all",
+        )
+        return {str(r["status"]): int(r["n"]) for r in rows or []}
 
     def delete(self, content_id: int) -> int:
         self.require(content_id)

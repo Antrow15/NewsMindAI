@@ -1,11 +1,12 @@
 # NewsMind
 
-Console newsroom backend plus FastAPI role APIs (Swagger at `/docs`).
+Console newsroom backend, FastAPI role APIs (Swagger at `/docs`), and Streamlit frontend.
 
 ## Architecture
 
 | Layer | Path | Responsibility |
 |---|---|---|
+| Streamlit UI | `frontend/` | Role dashboards and desk features (HTTP + JWT) |
 | Console CLI | `app.py` | Role menus, human-readable output |
 | FastAPI + Swagger | `api/` | Auth, journalist, AIA, CAE, publisher, editor, manager, admin |
 | Feature modules | `modules/` | Auth, admin pipeline, content desk, journalist tools |
@@ -66,7 +67,20 @@ $env:PYTHONPATH = "G:\NewsMind AI\NewsMindAI V2"
 uvicorn api.main:app --reload
 ```
 
-Open **http://127.0.0.1:8000/docs** or **http://127.0.0.1:8000/easy**
+Open **http://127.0.0.1:8000/docs** for Swagger.
+
+### Streamlit frontend
+
+Frontend from teammate fork (`dark-sriram/NewsMindAI`). With the API running on port 8000:
+
+```powershell
+cd "G:\NewsMind AI\NewsMindAI V2"
+$env:PYTHONPATH = "G:\NewsMind AI\NewsMindAI V2"
+# optional: $env:NEWSMIND_API_URL = "http://127.0.0.1:8000"
+streamlit run frontend/app.py
+```
+
+Open **http://localhost:8501** and sign in with a demo login below.
 
 ### Demo logins
 
@@ -74,6 +88,8 @@ Open **http://127.0.0.1:8000/docs** or **http://127.0.0.1:8000/easy**
 |---|---|
 | `admin` | `Admin@NewsMind2026!` |
 | `journalist` | `Journalist@NewsMind2026!` |
+| `journalist2` | `Journalist@NewsMind2026!` (City desk) |
+| `journalist3` | `Journalist@NewsMind2026!` (Politics desk) |
 | `editor` | `Editor@NewsMind2026!` |
 | `publisher` | `Publisher@NewsMind2026!` |
 | `manager` | `Manager@NewsMind2026!` |

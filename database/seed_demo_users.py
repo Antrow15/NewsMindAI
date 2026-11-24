@@ -20,23 +20,33 @@ from utils.logger import get_logger
 log = get_logger("seed_users")
 
 DEMO_USERS = (
-    ("admin", "administrator", "System", "Admin", "admin@newsroom.local"),
-    ("analyst", "audience_insight_analyst", "Asha", "Analyst", "analyst@newsroom.local"),
-    ("journalist", "journalist", "Jordan", "Journalist", "journalist@newsroom.local"),
-    ("editor", "editor", "Elena", "Editor", "editor@newsroom.local"),
-    ("adapter", "content_adaptation_editor", "Casey", "Adapter", "adapter@newsroom.local"),
-    ("publisher", "publisher", "Priya", "Publisher", "publisher@newsroom.local"),
-    ("manager", "newsroom_manager", "Morgan", "Manager", "manager@newsroom.local"),
+    ("admin", "administrator", "System", "Admin", "admin@newsroom.local", None),
+    ("analyst", "audience_insight_analyst", "Asha", "Analyst", "analyst@newsroom.local", None),
+    ("journalist", "journalist", "Jordan", "Journalist", "journalist@newsroom.local", "General"),
+    ("journalist2", "journalist", "Riley", "City", "journalist2@newsroom.local", "City"),
+    ("journalist3", "journalist", "Sam", "Politics", "journalist3@newsroom.local", "Politics"),
+    ("editor", "editor", "Elena", "Editor", "editor@newsroom.local", None),
+    ("adapter", "content_adaptation_editor", "Casey", "Adapter", "adapter@newsroom.local", None),
+    ("publisher", "publisher", "Priya", "Publisher", "publisher@newsroom.local", None),
+    ("manager", "newsroom_manager", "Morgan", "Manager", "manager@newsroom.local", None),
 )
 
 
-def _ensure_profile(user_id: int, role_code: str) -> None:
+def _ensure_profile(user_id: int, role_code: str, specialty: str | None = None) -> None:
     if role_code == "audience_insight_analyst":
         AudienceInsightAnalystDAO().ensure_for_user(user_id)
     elif role_code == "editor":
         EditorDAO().ensure_for_user(user_id)
     elif role_code == "journalist":
-        JournalistDAO().ensure_for_user(user_id)
+        from entities.journalist import Journalist
+
+        JournalistDAO().create(
+            Journalist(
+                user_id=user_id,
+                primary_specialization=specialty or "General",
+                availability_status="available",
+            )
+        )
     elif role_code == "content_adaptation_editor":
         ContentAdaptationEditorDAO().ensure_for_user(user_id)
     elif role_code == "publisher":
@@ -50,10 +60,14 @@ def seed_demo_users() -> int:
     users = UserDAO()
     roles = RoleDAO()
     created = 0
-    for username, role_code, first, last, email in DEMO_USERS:
+    for username, role_code, first, last, email, specialty in DEMO_USERS:
         role_id = roles.get_id_by_code(role_code)
         if role_id is None:
             raise RuntimeError(f"Missing role {role_code} — run python app.py --init-db first")
+        # Idempotent: skip usernames that already exist.
+        if users.read_by_username(username):
+            log.info("Skip existing user=%s", username)
+            continue
         emp_id = employees.create(
             Employee(
                 employee_code=f"NF-{username.upper()}",
@@ -73,7 +87,7 @@ def seed_demo_users() -> int:
                 account_status="active",
             )
         )
-        _ensure_profile(user_id, role_code)
+        _ensure_profile(user_id, role_code, specialty)
         created += 1
         log.info("Seeded user=%s role=%s", username, role_code)
     return created

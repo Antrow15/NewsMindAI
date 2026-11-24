@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from pathlib import Path
-
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 
 from api.http_errors import raise_http_error
 from api.routers import (
@@ -28,7 +26,6 @@ from utils.errors import AppError
 from utils.logger import get_logger
 
 log = get_logger("api")
-STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 OPENAPI_TAGS = [
     {
@@ -88,7 +85,7 @@ def create_app() -> FastAPI:
             "Models: `artifacts/models/editor_queue_urgency/` (editor review urgency) and "
             "`cae/` (unified content adaptation). Engagement/interest/trend are formulas; "
             "category is manual entry (no category model).\n\n"
-            "Simple tester UI (easier than Swagger): **/easy**"
+            "Streamlit UI: `streamlit run frontend/app.py` (calls this API over HTTP)."
         ),
         version="0.3.0",
         lifespan=lifespan,
@@ -112,10 +109,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    @application.get("/easy", include_in_schema=False)
-    def easy_tester() -> FileResponse:
-        return FileResponse(STATIC_DIR / "easy.html")
 
     @application.exception_handler(RequestValidationError)
     async def validation_exception_handler(

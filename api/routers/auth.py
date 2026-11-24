@@ -1,4 +1,4 @@
-"""Login, logout, change password, admin reset."""
+"""Login, logout, change password, profile, admin reset."""
 
 from __future__ import annotations
 
@@ -12,8 +12,13 @@ from api.schemas.auth import (
     LoginRequest,
     LoginResponse,
     MessageResponse,
+    ProfileResponse,
+    ProfileUpdateRequest,
 )
 from config.constants import CAP_MANAGE_USERS
+from dao.employee_dao import EmployeeDAO
+from dao.user_dao import UserDAO
+from database.connection import db_cursor
 from modules.authentication.auth_service import (
     AuthenticationError,
     authenticate,
@@ -22,10 +27,37 @@ from modules.authentication.auth_service import (
 )
 from services.access import require_capability_session
 from services.user import UserService
-from utils.errors import AuthError, PermissionDeniedError, ValidationError
+from utils.errors import AuthError, NotFoundError, PermissionDeniedError, ValidationError
+from utils.validators import require_email, require_nonempty, require_optional_str
 
 router = APIRouter(prefix="/auth", tags=["1. Login"])
-_APP_ERRORS = (AuthError, PermissionDeniedError, ValidationError)
+_APP_ERRORS = (AuthError, PermissionDeniedError, ValidationError, NotFoundError)
+
+
+def _load_profile(user_id: int) -> dict:
+    with db_cursor() as cur:
+        cur.execute(
+            """
+            SELECT u.user_id, u.username, u.account_status, u.employee_id,
+                   r.role_code, r.role_name,
+                   e.employee_code, e.first_name, e.last_name, e.email,
+                   e.mobile_number, e.department, e.designation, e.location,
+                   e.employment_status, e.joining_date
+            FROM users u
+            JOIN employee e ON e.employee_id = u.employee_id
+            JOIN role r ON r.role_id = u.role_id
+            WHERE u.user_id = %s
+            """,
+            (user_id,),
+        )
+        row = cur.fetchone()
+    if not row:
+        raise NotFoundError("Profile not found.")
+    data = dict(row)
+    jd = data.get("joining_date")
+    if jd is not None and hasattr(jd, "isoformat"):
+        data["joining_date"] = jd.isoformat()
+    return data
 
 
 @router.post(
@@ -69,6 +101,35 @@ def do_change_password(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         ) from exc
+
+
+@router.get("/me", response_model=ProfileResponse, summary="My profile")
+def get_my_profile(user: dict = Depends(get_current_user)):
+    try:
+        return _load_profile(int(user["user_id"]))
+    except _APP_ERRORS as exc:
+        raise_http_error(exc)
+
+
+@router.put("/me", response_model=ProfileResponse, summary="Update my profile")
+def update_my_profile(
+    body: ProfileUpdateRequest,
+    user: dict = Depends(get_current_user),
+):
+    try:
+        row = UserDAO().require(int(user["user_id"]))
+        employee_id = int(row["employee_id"])
+        EmployeeDAO().update(
+            employee_id,
+            first_name=require_nonempty(body.first_name, "First name"),
+            last_name=require_nonempty(body.last_name, "Last name"),
+            email=require_email(body.email),
+            mobile_number=require_optional_str(body.mobile_number, "Mobile"),
+            location=require_optional_str(body.location, "Location", max_len=128),
+        )
+        return _load_profile(int(user["user_id"]))
+    except _APP_ERRORS as exc:
+        raise_http_error(exc)
 
 
 @router.post(

@@ -71,6 +71,11 @@ def test_openapi_includes_new_desks(client):
     assert "/aia/predict-priority" not in paths
     assert "/journalist/suggest-category" not in paths
     assert "/journalist/related-content" in paths
+    assert "/journalist/dashboard" in paths
+    assert "/journalist/assignments" in paths
+    assert "/journalist/notifications" in paths
+    assert "/editor/pitches/{story_pitch_id}/assign" in paths
+    assert "/manager/pitches/{story_pitch_id}/assign" in paths
     assert "/admin/users" in paths
     assert "/admin/ingest" in paths
 
@@ -102,9 +107,18 @@ def test_cae_create_approve_and_versions(client):
     assert len(body["drafts"]) == 2
     draft_id = body["drafts"][0]["id"]
 
-    approved = client.post(
+    # Adapter cannot approve — editorial sign-off only.
+    denied = client.post(
         f"/cae/adaptation-drafts/{draft_id}/approve",
         headers=headers,
+        json={"remarks": "Looks good"},
+    )
+    assert denied.status_code in (401, 403), denied.text
+
+    editor_headers = {"Authorization": f"Bearer {_login(client, 'editor')}"}
+    approved = client.post(
+        f"/cae/adaptation-drafts/{draft_id}/approve",
+        headers=editor_headers,
         json={"remarks": "Looks good"},
     )
     assert approved.status_code == 200, approved.text

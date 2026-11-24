@@ -111,13 +111,7 @@ ROLE_CAPABILITIES = {
     ),
     # Analyst uses /aia only (not editor pitch-review desk)
     ROLE_AUDIENCE_ANALYST: (CAP_INGEST, CAP_CLEAN, CAP_ANALYTICS),
-    ROLE_JOURNALIST: (
-        CAP_INGEST,
-        CAP_CLEAN,
-        CAP_PERSIST,
-        CAP_PIPELINE,
-        CAP_JOURNALIST_TOOLS,
-    ),
+    ROLE_JOURNALIST: (CAP_JOURNALIST_TOOLS,),
     ROLE_EDITOR: (CAP_PITCH_REVIEW, CAP_CONTENT_REVIEW, CAP_ASSIGN, CAP_ANALYTICS),
     ROLE_ADAPTATION_EDITOR: (CAP_ADAPT,),
     ROLE_PUBLISHER: (CAP_PUBLISH,),
@@ -157,6 +151,8 @@ DEMO_PASSWORDS = {
     "admin": "Admin@NewsMind2026!",
     "analyst": "Analyst@NewsMind2026!",
     "journalist": "Journalist@NewsMind2026!",
+    "journalist2": "Journalist@NewsMind2026!",
+    "journalist3": "Journalist@NewsMind2026!",
     "editor": "Editor@NewsMind2026!",
     "adapter": "Adapter@NewsMind2026!",
     "publisher": "Publisher@NewsMind2026!",

@@ -111,7 +111,7 @@ def add_article(body: ArticleCreateRequest, token: str = Depends(get_session_tok
         raise_http_error(exc)
 
 
-@router.get("/content", response_model=ContentListResponse, summary="List content")
+@router.get("/content", response_model=ContentListResponse, summary="List my content")
 def list_content(
     limit: int = Query(default=20, ge=1, le=500),
     status: str | None = Query(default=None, description="Filter e.g. rework, submitted"),
@@ -119,6 +119,53 @@ def list_content(
 ):
     try:
         return _tools(token).list_content(limit=limit, status=status)
+    except _APP_ERRORS as exc:
+        raise_http_error(exc)
+
+
+@router.get("/dashboard", summary="Journalist dashboard metrics and assignments")
+def dashboard(token: str = Depends(get_session_token)):
+    try:
+        return _tools(token).dashboard()
+    except _APP_ERRORS as exc:
+        raise_http_error(exc)
+
+
+@router.get("/assignments", summary="Assignments from editors")
+def list_assignments(
+    limit: int = Query(default=50, ge=1, le=200),
+    token: str = Depends(get_session_token),
+):
+    try:
+        return _tools(token).list_assignments(limit=limit)
+    except _APP_ERRORS as exc:
+        raise_http_error(exc)
+
+
+@router.get("/notifications", summary="In-app notifications")
+def list_notifications(
+    unread_only: bool = Query(default=False),
+    limit: int = Query(default=50, ge=1, le=200),
+    token: str = Depends(get_session_token),
+):
+    try:
+        return _tools(token).list_notifications(unread_only=unread_only, limit=limit)
+    except _APP_ERRORS as exc:
+        raise_http_error(exc)
+
+
+@router.post("/notifications/{notification_id}/read", summary="Mark notification read")
+def mark_notification_read(notification_id: int, token: str = Depends(get_session_token)):
+    try:
+        return _tools(token).mark_notification_read(notification_id)
+    except _APP_ERRORS as exc:
+        raise_http_error(exc)
+
+
+@router.post("/notifications/read-all", summary="Mark all notifications read")
+def mark_all_notifications_read(token: str = Depends(get_session_token)):
+    try:
+        return _tools(token).mark_all_notifications_read()
     except _APP_ERRORS as exc:
         raise_http_error(exc)
 

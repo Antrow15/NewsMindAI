@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -16,6 +17,7 @@ from api.schemas.editor import (
     DeadlineRiskResponse,
     EditorQueueResponse,
     ManagerOverviewResponse,
+    PitchAssignRequest,
     PitchListResponse,
     RemarksBody,
     ResourcesResponse,
@@ -33,6 +35,16 @@ _APP_ERRORS = (AuthError, PermissionDeniedError, ValidationError, NotFoundError)
 
 def _user(token: str, capability: str) -> dict[str, Any]:
     return require_capability_session(capability, token)
+
+
+def _parse_due(raw: str | None) -> datetime | None:
+    if not raw or not str(raw).strip():
+        return None
+    text = str(raw).strip().replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise ValidationError("due_at must be an ISO datetime.") from exc
 
 
 @router.get("/overview", response_model=ManagerOverviewResponse, summary="Desk overview")
@@ -212,7 +224,36 @@ def assign_content(
     token: str = Depends(get_session_token),
 ):
     try:
-        _user(token, CAP_ASSIGN)
-        return _service.assign_content(content_id, body.assignee_user_id, note=body.note)
+        user = _user(token, CAP_ASSIGN)
+        return _service.assign_content(
+            content_id,
+            body.assignee_user_id,
+            note=body.note,
+            due_at=_parse_due(body.due_at),
+            assigner_user_id=int(user["user_id"]),
+        )
+    except _APP_ERRORS as exc:
+        raise_http_error(exc)
+
+
+@router.post(
+    "/pitches/{story_pitch_id}/assign",
+    summary="Assign approved pitch to journalist (creates draft article)",
+)
+def assign_pitch(
+    story_pitch_id: int,
+    body: PitchAssignRequest,
+    token: str = Depends(get_session_token),
+):
+    try:
+        user = _user(token, CAP_ASSIGN)
+        return _service.assign_pitch(
+            story_pitch_id,
+            body.assignee_user_id,
+            assigner_user_id=int(user["user_id"]),
+            note=body.note,
+            due_at=_parse_due(body.due_at),
+            auto_approve=body.auto_approve,
+        )
     except _APP_ERRORS as exc:
         raise_http_error(exc)

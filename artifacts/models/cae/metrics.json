@@ -1,0 +1,60 @@
+{
+  "overall": {
+    "validation": {
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "average_precision": 0.9999999999999998,
+      "confusion_matrix": [
+        [
+          103,
+          0
+        ],
+        [
+          0,
+          24
+        ]
+      ],
+      "records": 127
+    },
+    "test": {
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "average_precision": 0.9999999999999999,
+      "confusion_matrix": [
+        [
+          113,
+          0
+        ],
+        [
+          0,
+          24
+        ]
+      ],
+      "records": 137
+    }
+  },
+  "per_platform": {
+    "SOCIAL_MEDIA": {
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "average_precision": 0.9999999999999999,
+      "confusion_matrix": [
+        [
+          113,
+          0
+        ],
+        [
+          0,
+          24
+        ]
+      ],
+      "records": 137
+    }
+  }
+}

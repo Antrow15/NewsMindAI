@@ -5,12 +5,21 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from dao.article_dao import ArticleDAO
 from dao.content_dao import ContentDAO
+from dao.evidence_dao import EvidenceDAO
+from dao.news_dao import NewsDAO
+from dao.notification_dao import NotificationDAO
 from dao.story_pitch_dao import StoryPitchDAO
 from database.connection import db_cursor
+from entities.content.article import Article
+from entities.content.content import Content
+from entities.content.evidence import Evidence
+from entities.content.news import News
 from ml.common import normalize, similar_pairs
 from ml.editor import predict_editor_queue_urgency
-from utils.validators import require_optional_str, require_positive_id, require_title
+from utils.errors import ValidationError
+from utils.validators import require_nonempty, require_optional_str, require_positive_id, require_title
 
 # Lower number = show earlier in the editor queue
 URGENCY_ORDER = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
@@ -37,9 +46,68 @@ class EditorService:
         self,
         pitches: StoryPitchDAO | None = None,
         content: ContentDAO | None = None,
+        articles: ArticleDAO | None = None,
+        evidence: EvidenceDAO | None = None,
+        notifications: NotificationDAO | None = None,
     ) -> None:
         self.pitches = pitches or StoryPitchDAO()
         self.content = content or ContentDAO()
+        self.articles = articles or ArticleDAO()
+        self.news = NewsDAO()
+        self.evidence = evidence or EvidenceDAO()
+        self.notifications = notifications or NotificationDAO()
+
+    def _resolve_journalist(self, assignee_user_id: int) -> int:
+        with db_cursor() as cur:
+            cur.execute(
+                "SELECT journalist_id FROM journalist WHERE user_id = %s",
+                (assignee_user_id,),
+            )
+            hit = cur.fetchone()
+        if not hit:
+            raise ValidationError("Assignee is not a journalist desk user.")
+        return int(hit["journalist_id"])
+
+    def _assigner_label(self, user_id: int | None) -> str:
+        if not user_id:
+            return "Editor"
+        with db_cursor() as cur:
+            cur.execute(
+                """
+                SELECT COALESCE(NULLIF(TRIM(CONCAT(e.first_name, ' ', e.last_name)), ''), u.username) AS name
+                FROM users u
+                LEFT JOIN employee e ON e.employee_id = u.employee_id
+                WHERE u.user_id = %s
+                """,
+                (user_id,),
+            )
+            hit = cur.fetchone()
+        return str((hit or {}).get("name") or "Editor")
+
+    def _notify_assignment(
+        self,
+        *,
+        assignee_user_id: int,
+        title: str,
+        assigner_user_id: int | None,
+        content_id: int,
+        due_at: datetime | None,
+        note: str,
+    ) -> None:
+        assigner = self._assigner_label(assigner_user_id)
+        due_txt = due_at.strftime("%Y-%m-%d %H:%M UTC") if due_at else "No deadline set"
+        self.notifications.create(
+            user_id=assignee_user_id,
+            type="assignment",
+            title=f"New assignment: {title}",
+            body=f"Assigned by {assigner}. Deadline: {due_txt}."
+            + (f" Note: {note}" if note else ""),
+            payload={
+                "content_id": content_id,
+                "assigner_user_id": assigner_user_id,
+                "due_at": due_at.isoformat() if due_at else None,
+            },
+        )
 
     def score_editor_queue_urgency(self, title: str, summary: str = "") -> dict[str, Any]:
         """Score how urgent a headline is for the editor review queue."""
@@ -124,14 +192,28 @@ class EditorService:
             )
         return {"pairs": enriched, "pair_count": len(enriched), "scanned": len(docs)}
 
+    # Soft full load — one open story must NOT read as "at capacity".
+    DESK_CAPACITY_FULL = 8
+
+    @classmethod
+    def capacity_score(cls, open_workload: int) -> float:
+        """1.0 = empty desk, 0.0 = at/over soft capacity (~8 open items)."""
+        w = max(0, int(open_workload or 0))
+        return round(max(0.0, 1.0 - (w / float(cls.DESK_CAPACITY_FULL))), 4)
+
     def suggest_journalists(
         self,
         *,
         topic: str = "",
         title: str = "",
-        limit: int = 10,
+        limit: int = 3,
     ) -> dict[str, Any]:
-        """Rank journalists by specialty match + inverse workload + availability."""
+        """Rank journalists by specialty match + remaining desk capacity + availability.
+
+        Open workload = active desk items (draft / submitted / rework). Capacity is
+        relative to a soft full load of ~8 items — a single assignment is light load.
+        Returns the top ``limit`` matches (default 3).
+        """
         needle = normalize(f"{topic} {title}")
         needle_tokens = set(needle.split()) if needle else set()
 
@@ -149,8 +231,11 @@ class EditorService:
                        ) AS open_workload
                 FROM journalist j
                 JOIN users u ON u.user_id = j.user_id
+                JOIN role r ON r.role_id = u.role_id
                 LEFT JOIN employee e ON e.employee_id = u.employee_id
                 WHERE j.status = 'active'
+                  AND u.account_status = 'active'
+                  AND r.role_code = 'journalist'
                 ORDER BY j.journalist_id
                 """,
             )
@@ -173,7 +258,12 @@ class EditorService:
                 specialty_score = 0.35
 
             workload = int(row.get("open_workload") or 0)
-            workload_score = 1.0 / (1.0 + workload)
+            # Remaining capacity vs soft full load (not 1/(1+n), which marks 1 item as 50%).
+            workload_score = self.capacity_score(workload)
+            load_pct = min(
+                100,
+                round(100.0 * workload / float(self.DESK_CAPACITY_FULL)),
+            )
             availability = str(row.get("availability_status") or "available").lower()
             avail_score = {
                 "available": 1.0,
@@ -182,7 +272,11 @@ class EditorService:
                 "leave": 0.0,
             }.get(availability, 0.3)
 
-            score = round(specialty_score * 0.55 + workload_score * 0.30 + avail_score * 0.15, 4)
+            # Specialty leads; capacity still matters but one story is not "full".
+            score = round(
+                specialty_score * 0.50 + workload_score * 0.35 + avail_score * 0.15,
+                4,
+            )
             ranked.append(
                 {
                     "journalist_id": row["journalist_id"],
@@ -193,20 +287,33 @@ class EditorService:
                     "secondary_specialization": row.get("secondary_specialization"),
                     "availability_status": availability,
                     "open_workload": workload,
+                    "capacity_full_at": self.DESK_CAPACITY_FULL,
+                    "load_pct": load_pct,
                     "specialty_score": round(specialty_score, 4),
+                    "workload_score": workload_score,
+                    "availability_score": round(avail_score, 4),
                     "score": score,
                     "reason": (
                         f"specialty={specialty_score:.2f}, "
-                        f"workload={workload}, availability={availability}"
+                        f"open={workload}/{self.DESK_CAPACITY_FULL} "
+                        f"(capacity left={workload_score:.0%}), "
+                        f"availability={availability}"
                     ),
                 }
             )
 
+        # Best overall score first; ties prefer lighter workload.
         ranked.sort(key=lambda r: (-r["score"], r["open_workload"], r["journalist_id"]))
+        top_n = max(1, min(int(limit), 50))
+        top = ranked[:top_n]
+        for i, row in enumerate(top, start=1):
+            row["rank"] = i
         return {
-            "suggestions": ranked[: max(1, min(int(limit), 50))],
+            "suggestions": top,
             "topic": topic or title,
-            "method": "specialty_match + inverse_workload + availability",
+            "method": "specialty_match + remaining_desk_capacity + availability",
+            "capacity_full_at": self.DESK_CAPACITY_FULL,
+            "scored_count": len(ranked),
         }
 
     def list_content(self, status: str = "submitted", limit: int = 100) -> dict[str, Any]:
@@ -326,9 +433,26 @@ class EditorService:
         self.content.require(content_id)
         self.content.update_status(content_id, "rework")
         row = self.content.require(content_id)
+        remarks = require_optional_str(remarks, "Remarks") or ""
+        author_id = row.get("author_id")
+        if author_id:
+            with db_cursor() as cur:
+                cur.execute(
+                    "SELECT user_id FROM journalist WHERE journalist_id = %s",
+                    (int(author_id),),
+                )
+                hit = cur.fetchone()
+            if hit and hit.get("user_id"):
+                self.notifications.create(
+                    user_id=int(hit["user_id"]),
+                    type="rework",
+                    title=f"Rework requested: {row.get('title') or 'Untitled'}",
+                    body=remarks or "An editor sent this story back for rework.",
+                    payload={"content_id": content_id},
+                )
         return {
             **row,
-            "remarks": require_optional_str(remarks, "Remarks") or "",
+            "remarks": remarks,
             "next_step": "Journalist updates content then resubmits (status=submitted)",
         }
 
@@ -337,32 +461,238 @@ class EditorService:
         content_id: int,
         assignee_user_id: int,
         note: str = "",
+        *,
+        due_at: datetime | None = None,
+        assigner_user_id: int | None = None,
     ) -> dict[str, Any]:
         content_id = require_positive_id(content_id, "Content ID")
         assignee_user_id = require_positive_id(assignee_user_id, "Assignee user ID")
-        row = self.content.require(content_id)
-
-        journalist_id = None
-        with db_cursor() as cur:
-            cur.execute(
-                "SELECT journalist_id FROM journalist WHERE user_id = %s",
-                (assignee_user_id,),
-            )
-            hit = cur.fetchone()
-            if hit:
-                journalist_id = int(hit["journalist_id"])
-
-        if journalist_id is not None:
-            self.content.update(content_id, author_id=journalist_id)
-        elif row.get("author_id") is None:
-            # Fallback: store user_id only if no journalist desk row (legacy paths).
-            self.content.update(content_id, author_id=assignee_user_id)
-
+        self.content.require(content_id)
+        journalist_id = self._resolve_journalist(assignee_user_id)
+        note = require_optional_str(note, "Note") or ""
+        now = datetime.utcnow()
+        self.content.update(
+            content_id,
+            author_id=journalist_id,
+            assigned_by_user_id=assigner_user_id,
+            assigned_at=now,
+            due_at=due_at,
+            assignment_note=note or None,
+        )
         updated = self.content.require(content_id)
+        self._notify_assignment(
+            assignee_user_id=assignee_user_id,
+            title=str(updated.get("title") or "Untitled"),
+            assigner_user_id=assigner_user_id,
+            content_id=content_id,
+            due_at=due_at,
+            note=note,
+        )
         return {
             "content_id": content_id,
             "assignee_user_id": assignee_user_id,
             "journalist_id": journalist_id,
-            "note": require_optional_str(note, "Note") or "",
+            "note": note,
+            "due_at": due_at.isoformat() if due_at else None,
+            "assigner": self._assigner_label(assigner_user_id),
             "content": updated,
+        }
+
+    def assign_pitch(
+        self,
+        story_pitch_id: int,
+        assignee_user_id: int,
+        *,
+        assigner_user_id: int | None = None,
+        note: str = "",
+        due_at: datetime | None = None,
+        auto_approve: bool = True,
+    ) -> dict[str, Any]:
+        """Approve (optional) + create draft article from pitch and assign to journalist."""
+        pitch_id = require_positive_id(story_pitch_id, "Story pitch ID")
+        assignee_user_id = require_positive_id(assignee_user_id, "Assignee user ID")
+        pitch = self.pitches.require(pitch_id)
+        status = str(pitch.get("status") or "").lower()
+        if status == "rejected":
+            raise ValidationError("Cannot assign a rejected pitch.")
+        if status != "approved" and auto_approve:
+            pitch = self.approve_pitch(pitch_id, assigner_user_id)
+        elif status != "approved":
+            raise ValidationError("Pitch must be approved before assignment.")
+
+        journalist_id = self._resolve_journalist(assignee_user_id)
+        note = require_optional_str(note, "Note") or ""
+        title = require_title(pitch.get("title") or "Untitled pitch")
+        summary = require_optional_str(pitch.get("summary"), "Summary") or ""
+        body = (
+            summary
+            or f"Draft brief from approved story pitch “{title}”. Expand into a full article."
+        )
+        if len(body) < 40:
+            body = (body + " " + ("Please develop this brief into a complete newsroom article.")).strip()
+        now = datetime.utcnow()
+        content_id = self.content.create(
+            Content(
+                author_id=journalist_id,
+                title=title,
+                summary=summary,
+                raw_body=body,
+                content_body=body,
+                status="draft",
+                content_kind="article",
+                source_type="pitch_assignment",
+            )
+        )
+        self.content.update(
+            content_id,
+            assigned_by_user_id=assigner_user_id,
+            assigned_at=now,
+            due_at=due_at,
+            assignment_note=note or None,
+        )
+        article_id = self.articles.create(
+            Article(
+                content_id=content_id,
+                story_pitch_id=pitch_id,
+                article_type="feature",
+                estimated_read_time=5,
+            )
+        )
+        evidence_id = self.evidence.create(
+            Evidence(
+                content_id=content_id,
+                title="Editor brief",
+                evidence_type="brief",
+                source_url="",
+                body_text=summary or title,
+                uploaded_by=journalist_id,
+            )
+        )
+        self._notify_assignment(
+            assignee_user_id=assignee_user_id,
+            title=title,
+            assigner_user_id=assigner_user_id,
+            content_id=content_id,
+            due_at=due_at,
+            note=note,
+        )
+        return {
+            "story_pitch_id": pitch_id,
+            "content_id": content_id,
+            "article_id": article_id,
+            "evidence_id": evidence_id,
+            "assignee_user_id": assignee_user_id,
+            "journalist_id": journalist_id,
+            "due_at": due_at.isoformat() if due_at else None,
+            "assigner": self._assigner_label(assigner_user_id),
+            "note": note,
+            "pitch": _annotate_pitch_source(self.pitches.require(pitch_id)),
+            "content": self.content.require(content_id),
+        }
+
+    def create_and_assign(
+        self,
+        *,
+        kind: str,
+        title: str,
+        body: str,
+        summary: str = "",
+        assignee_user_id: int,
+        assigner_user_id: int | None = None,
+        note: str = "",
+        due_at: datetime | None = None,
+        event_type: str = "city",
+        event_location: str = "",
+        severity: str = "medium",
+        breaking: bool = False,
+        article_type: str = "feature",
+        read_time: int = 5,
+        evidence_title: str = "",
+    ) -> dict[str, Any]:
+        """Editor creates news/article as a draft and assigns it to a journalist."""
+        kind_norm = str(kind or "").strip().lower()
+        if kind_norm not in {"news", "article"}:
+            raise ValidationError("kind must be 'news' or 'article'.")
+        title = require_title(title)
+        body = require_nonempty(body, "Body")
+        if len(body) < 40:
+            raise ValidationError("Body must be at least 40 characters.")
+        summary = require_optional_str(summary, "Summary") or ""
+        assignee_user_id = require_positive_id(assignee_user_id, "Assignee user ID")
+        journalist_id = self._resolve_journalist(assignee_user_id)
+        note = require_optional_str(note, "Note") or ""
+        now = datetime.utcnow()
+
+        content_id = self.content.create(
+            Content(
+                author_id=journalist_id,
+                title=title,
+                summary=summary,
+                raw_body=body,
+                content_body=body,
+                status="draft",
+                content_kind=kind_norm,
+                source_type="editor_assignment",
+            )
+        )
+        self.content.update(
+            content_id,
+            assigned_by_user_id=assigner_user_id,
+            assigned_at=now,
+            due_at=due_at,
+            assignment_note=note or None,
+        )
+        news_id = None
+        article_id = None
+        if kind_norm == "news":
+            news_id = self.news.create(
+                News(
+                    content_id=content_id,
+                    event_title=title,
+                    event_type=require_nonempty(event_type or "city", "Event type"),
+                    event_location=require_optional_str(event_location, "Event location") or "",
+                    severity=str(severity or "medium"),
+                    breaking_news_flag=bool(breaking),
+                )
+            )
+        else:
+            article_id = self.articles.create(
+                Article(
+                    content_id=content_id,
+                    article_type=str(article_type or "feature"),
+                    estimated_read_time=max(1, int(read_time or 5)),
+                )
+            )
+
+        ev_title = require_optional_str(evidence_title, "Evidence title") or f"Editor brief · {title}"
+        evidence_id = self.evidence.create(
+            Evidence(
+                content_id=content_id,
+                title=ev_title[:200],
+                evidence_type="document",
+                source_url="",
+                body_text=note or summary or body[:500],
+                uploaded_by=journalist_id,
+            )
+        )
+        self._notify_assignment(
+            assignee_user_id=assignee_user_id,
+            title=title,
+            assigner_user_id=assigner_user_id,
+            content_id=content_id,
+            due_at=due_at,
+            note=note,
+        )
+        return {
+            "content_id": content_id,
+            "news_id": news_id,
+            "article_id": article_id,
+            "evidence_id": evidence_id,
+            "kind": kind_norm,
+            "assignee_user_id": assignee_user_id,
+            "journalist_id": journalist_id,
+            "due_at": due_at.isoformat() if due_at else None,
+            "assigner": self._assigner_label(assigner_user_id),
+            "note": note,
+            "content": self.content.require(content_id),
         }

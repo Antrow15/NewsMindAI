@@ -216,3 +216,63 @@ class AdaptationDAO(BaseDAO):
             )
             row = cur.fetchone()
             return dict(row) if row else None
+
+    def list_review_queue(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        """Pending / needs-manual drafts joined to their request."""
+        limit = max(1, min(int(limit), 200))
+        with db_cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    d.id AS draft_id,
+                    d.request_id,
+                    d.platform,
+                    d.version_number,
+                    d.adapted_title,
+                    d.adapted_content,
+                    d.model_version,
+                    d.status AS draft_status,
+                    d.generation_parameters,
+                    d.validation_flags,
+                    d.created_at AS draft_created_at,
+                    r.original_title,
+                    r.original_content,
+                    r.status AS request_status,
+                    r.created_at AS request_created_at
+                FROM adaptation_drafts d
+                JOIN adaptation_requests r ON r.id = d.request_id
+                WHERE d.status IN ('PENDING_REVIEW', 'REQUIRES_MANUAL_REVIEW')
+                ORDER BY
+                    CASE d.status
+                        WHEN 'REQUIRES_MANUAL_REVIEW' THEN 0
+                        ELSE 1
+                    END,
+                    d.created_at ASC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            return [dict(r) for r in cur.fetchall() or []]
+
+    def list_recent_requests(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        limit = max(1, min(int(limit), 100))
+        with db_cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    r.*,
+                    (
+                        SELECT COUNT(*) FROM adaptation_drafts d WHERE d.request_id = r.id
+                    ) AS draft_count,
+                    (
+                        SELECT COUNT(*) FROM adaptation_drafts d
+                        WHERE d.request_id = r.id
+                          AND d.status IN ('PENDING_REVIEW', 'REQUIRES_MANUAL_REVIEW')
+                    ) AS pending_count
+                FROM adaptation_requests r
+                ORDER BY r.created_at DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            return [dict(r) for r in cur.fetchall() or []]

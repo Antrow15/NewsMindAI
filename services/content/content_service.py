@@ -212,8 +212,22 @@ class ContentService:
     def get_content_by_input(self, raw_id: str) -> dict[str, Any]:
         return self.get_content(require_positive_id(raw_id, "Content ID"))
 
-    def list_content(self, limit: int = 10, status: str | None = None) -> list[dict[str, Any]]:
+    def list_content(
+        self,
+        limit: int = 10,
+        status: str | None = None,
+        *,
+        author_id: int | None = None,
+        assigned_only: bool = False,
+    ) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 500))
+        if author_id is not None:
+            return self.repo.content.list_by_author(
+                int(author_id),
+                status=require_content_status(status) if status else None,
+                limit=limit,
+                assigned_only=assigned_only,
+            )
         if status:
             return self.repo.content.list_by_status(require_content_status(status), limit=limit)
         return self.repo.content.list_all(limit=limit)

@@ -16,6 +16,17 @@ class RemarksBody(BaseModel):
 class AssignRequest(BaseModel):
     assignee_user_id: int = Field(..., gt=0)
     note: str = Field(default="", max_length=2000)
+    due_at: str | None = Field(
+        default=None,
+        description="ISO datetime deadline for the assignment",
+    )
+
+
+class PitchAssignRequest(BaseModel):
+    assignee_user_id: int = Field(..., gt=0)
+    note: str = Field(default="", max_length=2000)
+    due_at: str | None = None
+    auto_approve: bool = True
 
 
 class PitchListResponse(BaseModel):
@@ -71,13 +82,35 @@ class PitchDuplicateResponse(BaseModel):
 class SuggestJournalistRequest(BaseModel):
     topic: str = ""
     title: TitleStr | None = None
-    limit: int = Field(default=10, ge=1, le=50)
+    # Editors pick from the top ranked desk matches (workload + specialty).
+    limit: int = Field(default=3, ge=1, le=50)
+
+
+class EditorCreateAssignRequest(BaseModel):
+    """Editor creates news/article and assigns a journalist in one step."""
+
+    kind: str = Field(..., description="news or article")
+    title: TitleStr
+    body: str = Field(..., min_length=40)
+    summary: str = Field(default="", max_length=5000)
+    assignee_user_id: int = Field(..., gt=0)
+    note: str = Field(default="", max_length=2000)
+    due_at: str | None = None
+    event_type: str = Field(default="city", max_length=64)
+    event_location: str = Field(default="", max_length=255)
+    severity: str = Field(default="medium", max_length=32)
+    breaking: bool = False
+    article_type: str = Field(default="feature", max_length=64)
+    read_time: int = Field(default=5, ge=1, le=120)
+    evidence_title: str = Field(default="", max_length=500)
 
 
 class SuggestJournalistResponse(BaseModel):
     suggestions: list[dict[str, Any]]
     topic: str | None = None
     method: str | None = None
+    scored_count: int | None = None
+    capacity_full_at: int | None = None
 
 
 class ManagerOverviewResponse(BaseModel):

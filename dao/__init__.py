@@ -15,6 +15,7 @@ from dao.ingest_file_dao import IngestFileDAO
 from dao.journalist_dao import JournalistDAO
 from dao.news_dao import NewsDAO
 from dao.newsroom_manager_dao import NewsroomManagerDAO
+from dao.notification_dao import NotificationDAO
 from dao.publication_dao import PublicationDAO
 from dao.publisher_dao import PublisherDAO
 from dao.raw_ingest_dao import RawIngestDAO
@@ -38,6 +39,7 @@ __all__ = [
     "JournalistDAO",
     "NewsDAO",
     "NewsroomManagerDAO",
+    "NotificationDAO",
     "PublicationDAO",
     "PublisherDAO",
     "RawIngestDAO",
